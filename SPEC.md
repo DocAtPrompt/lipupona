@@ -183,6 +183,11 @@ stored bytes yet — and displayed as a raw block (§5.11) holding that HTML
 until it is fixed. A block read from HTML that breaks a limit or a constraint
 is passed through as it is.
 
+What a reader of notation returns is the HTML, and the HTML is what an HTML
+parser reads back from it. A tree no parser builds — an `li` directly inside
+an `li`, which a parser makes into two items — is reported, and stored as
+the parser reads its canonical serialization back.
+
 Each cause is reported with one code: an element or attribute the profile
 does not know is `out-of-profile`; elements the profile knows, arranged
 against a constraint (text directly in a container, a `summary` that is not
@@ -316,7 +321,10 @@ Two rules make the display unique and keep L1:
   long form; short form → element line; element line → raw block (§5.11).
   Examples: `Eisen<strong>mangel</strong>` is written `Eisen.strong(mangel)`
   (no markers inside a word); `<sup>a b</sup>` is written `.sup(a b)`; an
-  empty `<p></p>` is written `.p`, an empty `<h2></h2>` `.h2`.
+  empty `<p></p>` is written `.p`, an empty `<h2></h2>` `.h2`. A paragraph
+  one of whose lines would open a block with markup that no backslash can
+  take — a comment alone on a line, a line left blank by a comment's text —
+  is written `.p` with its content indented.
 - **W2 — escape by reading.** Scanning left to right, wherever the reader
   would begin a construct in what is literal text — markers, block openers,
   tolerated forms of §6, typed HTML — the writer puts a backslash before the
@@ -540,11 +548,15 @@ marker character stands:
 3. It **closes** at the first later occurrence of the same marker in the same
    scope that is preceded by a non-whitespace character and — for `**`, `*`,
    `==`, `~~` — not followed by a letter or digit. The content between MUST
-   NOT be empty. For `^` and `~` the content MUST NOT contain whitespace.
+   NOT be empty. For `^` and `~` the content MUST NOT contain whitespace. An
+   occurrence that would break one of these two rules does not close; the
+   search goes on. Escapes and code spans are skipped. A line break inside a
+   paragraph is no boundary: `**fett⏎weiter**` is one `strong` holding a
+   `<br>`.
 4. If no marker opens there, the character is text and the scan moves on by
    one character.
-5. The content is read recursively by the same rules; a marker inside closes
-   before its parent can.
+5. The content between opener and closer is read recursively by the same
+   rules; a marker inside it must close inside it.
 
 Examples: `2*3 und 4*5` is text. `10^9^/l` is a superscript;
 `150 × 10^9/l und 4 × 10^9/l` stays text. `**a*` reads as `<em>*a</em>`.
@@ -579,7 +591,8 @@ level**, up to the profile's list depth.
 
 - On input, indentation is rounded down to whole levels, so the three spaces
   one types to align under `1. ` still read as one level; a tab counts as one
-  level. The writer always writes two spaces.
+  level. Levels count from the indentation of the list's first item. The
+  writer always writes two spaces.
 - `- a` is `<li>a</li>`. An indented text line under an item continues its
   phrasing (a `<br>`); an indented list under it is a nested list after the
   phrasing (content model *lead*). A blank line followed by indented content
@@ -626,7 +639,10 @@ Eisenpräparate
   of the table.
 - **Header:** all rows above the separator line are header rows (`thead`,
   cells `th`). Without a separator line the table has no `thead`. A header
-  cell among the body rows begins with `= `.
+  cell among the body rows begins with `= `; an empty one is `=` alone. Cell
+  text that itself begins with `= `, or is `=`, takes a backslash: `\= 5`. A
+  row whose cells would all read as separator cells takes a backslash before
+  its first cell's text: `| \--- |`.
 - **Separator line:** a cell of one or more `-`, optionally with `:` at
   either end. Colons are accepted and dropped with the diagnostic
   `alignment-dropped`.
@@ -680,10 +696,12 @@ at least as long, alone on a line, closes it. Everything between is literal,
 dedented by the current level. The content of the `pre` is the lines between
 the fences joined by line feeds: an empty `pre` is an opening fence directly
 followed by its closing fence, and content that ends with a line feed shows
-an empty last line. The writer chooses a fence longer than any run of
-backticks at the start of a line in the content. The opening fence carries
-the classes of the `pre`, separated by spaces (```` ```rust beispiel ````),
-the way a Markdown fence carries a language:
+an empty last line. A closing fence may be indented. The writer chooses a
+fence longer than any run of backticks at the start of a line in the
+content, after its indentation. The opening fence carries the classes of the
+`pre`, separated by spaces (```` ```rust beispiel ````), the way a Markdown
+fence carries a language; a `pre` whose class is `{=html}` or `=html` would
+read as a raw block and is shown as one (§5.11):
 
 ````
 ```rust
@@ -717,7 +735,9 @@ Appendix B.)*
 
 A **comment** needs no fence: between blocks it stands on its own lines and
 is separated like a block, with one blank line before and after it; inside
-phrasing it stays where it is. It is passed through and reported
+phrasing it stays where it is. A comment that begins a line stands between
+blocks only when nothing follows it on its last line; `<!-- a --> Text` is a
+paragraph that begins with a comment. It is passed through and reported
 (`comment`), and it is never indexed as text.
 
 ### 5.12 Escaping

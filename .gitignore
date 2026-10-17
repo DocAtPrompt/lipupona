@@ -2,3 +2,7 @@
 _lokal/
 _renders/
 /target
+
+# Working notes for Claude, kept local (synced by Tresorit, not published)
+/CLAUDE.md
+/HANDOVER.md
