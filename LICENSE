@@ -2,8 +2,11 @@ lipupona specification
 Copyright (c) 2026 Alexander Erben
 
 The text of the specification (README.md, SPEC.md and everything under
-profiles/) is licensed under the Creative Commons Attribution 4.0
-International License (CC BY 4.0).
+profiles/ and docs/) and the logo (assets/logo/) are licensed under the
+Creative Commons Attribution 4.0 International License (CC BY 4.0).
+
+The wordmark in the logo is set in Inter (SIL Open Font License 1.1),
+converted to outlines.
 
 You are free to share and adapt it for any purpose, including commercially,
 as long as you give appropriate credit, provide a link to the license and
