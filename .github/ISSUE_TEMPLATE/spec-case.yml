@@ -1,0 +1,81 @@
+name: A case the specification gets wrong
+description: An input whose result in SPEC.md is wrong, ambiguous or missing — written as a test case.
+title: "[case] "
+labels: ["spec-case"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you. A case in the format of `tests/README.md` is the most useful
+        contribution: it can go into the test suite as it is. Fill in what you
+        can; a short note is welcome too.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - serialization
+        - lines
+        - short-forms
+        - element-line
+        - inline
+        - lists
+        - quote
+        - tables
+        - code
+        - raw
+        - escaping
+        - tolerance
+        - callouts
+        - profile
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options:
+        - roundtrip
+        - tolerance
+        - canonical
+        - passthrough
+        - diagnostic
+    validations:
+      required: true
+  - type: input
+    id: section
+    attributes:
+      label: Section of SPEC.md
+      placeholder: "5.5.2"
+  - type: textarea
+    id: input
+    attributes:
+      label: Input
+      description: Notation as typed (input.txt) or HTML as found in a file (input.html).
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected HTML
+      description: The canonical body fragment you expect (expected.html).
+      render: html
+  - type: textarea
+    id: display
+    attributes:
+      label: Expected display
+      description: The canonical notation you expect (display.txt), if the kind has one.
+      render: text
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Expected diagnostics
+      description: One code per line, as in SPEC.md §9.3.
+      render: text
+  - type: textarea
+    id: why
+    attributes:
+      label: What the specification says, and why it is wrong
+    validations:
+      required: true

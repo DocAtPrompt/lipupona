@@ -5,5 +5,9 @@ edition = "2024"
 rust-version = "1.92"
 license = "MIT OR Apache-2.0"
 description = "Reader, writer and canonicaliser for lipupona, a plain-text notation for profiled HTML"
+repository = "https://github.com/DocAtPrompt/lipupona"
+readme = "README.md"
+keywords = ["html", "markdown", "notation", "markup", "canonicalization"]
+categories = ["parser-implementations", "text-processing"]
 
 [dependencies]
