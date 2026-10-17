@@ -1,0 +1,3 @@
+kind = "roundtrip"
+section = "5.9"
+note = "The = of a header cell counts towards the column width."

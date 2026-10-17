@@ -1,0 +1,3 @@
+| Merkmal | A | B | C | D | E | F |
+|---|---|---|---|---|---|---|
+| Beginn | akut | schleichend | akut | schleichend | akut | schleichend |

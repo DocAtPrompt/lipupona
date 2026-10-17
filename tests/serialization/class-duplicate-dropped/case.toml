@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "C11: a class that occurs again is dropped after its first occurrence."

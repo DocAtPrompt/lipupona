@@ -1,0 +1,3 @@
+kind = "passthrough"
+section = "A"
+note = "A src beginning with / counts as absolute."

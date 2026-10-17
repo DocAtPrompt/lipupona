@@ -1,0 +1,2 @@
+:::div.spalte
+Eine Spalte.

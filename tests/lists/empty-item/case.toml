@@ -1,0 +1,3 @@
+kind = "roundtrip"
+section = "5.6"
+note = "A list with an empty item is written as element lines, without blank lines between them."

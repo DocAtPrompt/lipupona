@@ -1,0 +1,3 @@
+kind = "roundtrip"
+section = "5.2"
+note = "Blocks under an element line are separated by an empty blank line."

@@ -1,0 +1,1 @@
+.img[alt="Thorax" src="a.png"]

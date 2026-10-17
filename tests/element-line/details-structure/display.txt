@@ -1,0 +1,5 @@
+.details
+  .summary
+    Mehr
+
+  Zugeklappt, aber durchsuchbar.

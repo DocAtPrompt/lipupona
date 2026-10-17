@@ -27,7 +27,7 @@ case names another.
 | `thead` `tbody` `tfoot` | `tr` only | inside `table` |
 | `tr` | `th`, `td` | inside `thead` / `tbody` / `tfoot` |
 | `blockquote` | blocks | structure |
-| `figure` | blocks, with at most one `figcaption` | structure |
+| `figure` | blocks and `img`, with at most one `figcaption` | structure; `img` stands directly in it (SPEC §5.4.4) |
 | `details` | `summary`, then blocks | structure; with class `callout` a container (SPEC §7.2) |
 | `div` | blocks | container |
 | `aside` | blocks | container |
@@ -67,13 +67,14 @@ with these restrictions:
 | `id` | only on blocks — a link target inside a paragraph is not a stable anchor |
 | `role` | only on `div`, only the value `note` (callouts of core weight) |
 | `open` | only on `details`, boolean, written `open=""` |
-| `start` | only on `ol`; omitted when 1 |
-| `href` `src` | percent-encoded (C12); `src` never absolute |
+| `start` | only on `ol`; omitted when 1 — canonicalisation removes `start="1"` |
+| `href` `src` | percent-encoded (C12); `src` never absolute: no scheme, no leading `/` |
 
 Never allowed: `style`, event attributes (`on…`), `contenteditable`, `tabindex`.
 
 Reserved per implementation: `data-<name>-*` (§11). konsona uses
-`data-konsona-*`.
+`data-konsona-*`; the test suite uses `data-test-*`. Such attributes of
+another implementation are kept and not reported.
 
 ## Callout registry
 
@@ -90,10 +91,12 @@ The five core types of §7.1, nothing else:
 ## Islands
 
 The reference profile declares one kind: an element carrying
-`data-<name>-rendered`, which names the renderer that produced it — for
+`data-<name>-rendered` (`<name>` the implementation's, `test` in the test
+suite), which names the renderer that produced it — for
 example the SVG beside a diagram source. Its content runs through a whitelist
 of its own: no `script`, no event attributes, no `foreignObject`, no reference
-to another host, no `javascript:`, no `@import`.
+to another host, no `javascript:`, no `@import`. An island that breaks it is
+reported as `island-rejected`.
 
 ## Not included — with the reason
 
@@ -108,7 +111,7 @@ what profiles are for.
 | `abbr` | its title shows only on mouse hover — invisible on a phone |
 | `del` `ins` `small` `u` `q` `cite` | `s` covers the one case that really occurs; the rest are classes |
 | `audio` `video` | not needed for text documents yet |
-| `h5` `h6` | four levels are enough; deeper input is reduced with a diagnostic |
+| `h5` `h6` | four levels are enough; deeper notation input is reduced with a diagnostic (SPEC §6), deeper HTML is passed through and reported (SPEC §3.3) |
 | `script`, `iframe`, `form`, `input` | not a document |
 
 **Anything that does not fit the profile — formulas, musical notation, circuit

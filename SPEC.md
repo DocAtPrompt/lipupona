@@ -130,7 +130,9 @@ A profile MUST declare:
 3. Which blocks are **structures** and which are **containers**, and for each
    structure its inner grammar (which children in which order).
 4. **Limits**: container depth, list depth, the deepest heading level and the
-   maximum column count of the pipe grid (§5.9).
+   maximum column count of the pipe grid (§5.9). The last is a limit of the
+   display, not of the document: a wider table is valid and is displayed in
+   the cell-per-line form.
 5. **Attributes**: which are allowed, on which elements, and — where
    restricted — with which values.
 6. The **callout registry** (§7).
@@ -165,14 +167,26 @@ implementation:
 - MUST NOT rewrite a document merely because it was read. Canonicalisation
   happens on saving.
 
+Reading never converts: an `h5` in HTML is passed through and reported, not
+reduced to `h4`. Reducing is a conversion — done by a reader of notation
+(§6) or by a converter, never on reading HTML.
+
 ### 3.4 Limits and constraints that are broken
 
 A reader that is given notation producing a tree beyond a limit (a fourth
 list level, a third container level) or against a constraint (a callout in a
 list item) builds the tree anyway, so that nothing typed is lost, and reports
 `limit-exceeded` or `constraint-violated`. Such a block is outside the
-profile in the sense of §3.3: it is saved as it is and displayed as a raw
-block (§5.11) until it is fixed.
+profile in the sense of §3.3: it is saved in canonical form — there are no
+stored bytes yet — and displayed as a raw block (§5.11) holding that HTML
+until it is fixed. A block read from HTML that breaks a limit or a constraint
+is passed through as it is.
+
+Each cause is reported with one code: an element or attribute the profile
+does not know is `out-of-profile`; elements the profile knows, arranged
+against a constraint (text directly in a container, a `summary` that is not
+the first child, a callout in a list item), are `constraint-violated`; depth
+beyond a limit is `limit-exceeded`.
 
 ### 3.5 Attributes in general
 
@@ -185,7 +199,10 @@ A profile MAY declare islands — for example a rendered SVG next to its diagram
 source. An island is marked by an attribute the profile names, is passed
 through unread, is not canonicalised and has no notation of its own; it is
 displayed as a raw block (§5.11). The profile SHOULD give islands a whitelist
-of their own (no scripts, no event attributes, no external references).
+of their own (no scripts, no event attributes, no external references). An
+island that breaks its whitelist is passed through all the same and reported
+(`island-rejected`); whether and how it is rendered is the implementation's
+decision.
 
 ---
 
@@ -202,7 +219,8 @@ A canonical document has exactly one byte sequence. The rules apply to the
 - **C3** Text, attribute values and paths are in Unicode NFC.
 - **C4** Invisible characters are written as references, everything else
   literally: U+00A0 as `&nbsp;`, U+00AD as `&shy;`, U+200B, U+200C, U+200D,
-  U+2060 and U+FEFF as `&#xHHHH;` (four upper-case hex digits).
+  U+2060 and U+FEFF as `&#xHHHH;` (four upper-case hex digits). This holds
+  everywhere: in text, in attribute values and inside `pre`.
   *Reason: a non-breaking space in "z. B." cannot otherwise be told from a
   space in the source.*
 - **C5** Minimal escapes: `&` and `<` in text, as `&amp;` and `&lt;`; `&` and
@@ -213,17 +231,39 @@ A canonical document has exactly one byte sequence. The rules apply to the
 - **C6** Line breaks and indentation only between blocks: two spaces per
   level, no tabs. **The phrasing content of a block stands on exactly one
   line**, however long. *Reason: whitespace between inline elements carries
-  meaning; breaking there would change the text.*
+  meaning; breaking there would change the text.* An element without block
+  children stands on one line with its content. An element with at least one
+  block child puts every child on a line of its own, one level deeper — a
+  run of phrasing included (content model *lead*):
+
+  ```html
+  <li>
+    zweiwertig
+    <ul>
+      <li>Eisensulfat</li>
+    </ul>
+  </li>
+  ```
+
+  A comment between blocks stands on a line of its own at the indentation of
+  the blocks; a comment inside phrasing stays where it is.
 - **C7** Whitespace in text is collapsed — runs of spaces, tabs and line breaks
-  to one space — and removed at the start and end of a block and next to a
-  `<br>`. This is what a browser displays anyway.
-- **C8** `pre` is verbatim: not indented, not collapsed, and its content begins
-  immediately after the start tag. Because HTML parsers drop a line feed
-  directly after `<pre>`, content that itself begins with a line feed is
-  written with one additional line feed. **A `pre` contains text only**; a
-  language is a class on the `pre`.
+  to one space — and removed at the start and end of a block, at the start
+  and end of a run of phrasing that borders a block, and next to a `<br>`.
+  These rules apply to the text as displayed, across the boundaries of inline
+  elements: `<p><strong> a</strong></p>` becomes `<p><strong>a</strong></p>`,
+  and of two spaces separated only by tags the first is kept. This is what a
+  browser displays anyway.
+- **C8** `pre` is verbatim: its content is not indented and not collapsed, and
+  it begins immediately after the start tag; the start tag itself is indented
+  like any other block. Because HTML parsers drop a line feed directly after
+  `<pre>`, content that itself begins with a line feed is written with one
+  additional line feed. Verbatim concerns whitespace only: C3 and C4 apply
+  inside `pre` as everywhere. **A `pre` contains text only**; a language is a
+  class on the `pre`.
 - **C9** One blank line before every heading, except a heading that is the
-  first child of `body` or of a container; no blank lines anywhere else.
+  first child of `body` or of a container; no blank lines anywhere else. A
+  blank line is empty: it carries no indentation.
 
 *Tags and attributes*
 
@@ -231,15 +271,20 @@ A canonical document has exactly one byte sequence. The rules apply to the
   always in double quotes, empty ones too (`alt=""` is a statement); boolean
   attributes are written with an empty value (`open=""`).
 - **C11** Attribute order: `id`, then `class`, then all others alphabetically.
-  Classes keep their order; only the whitespace between them is normalised.
+  Classes keep their order. Between them stands one space, at the ends none;
+  a class that occurs again is dropped after its first occurrence, and an
+  empty `class` attribute is dropped.
 - **C12** `href` and `src` are percent-encoded. A value with a scheme — an
   RFC 3986 scheme of at least two characters followed by `:` (`https:`,
   `mailto:`; not `C:`) — is left untouched. Otherwise the value is split at
-  the first `#` into path and fragment; the `#` stays literal, and in both
-  parts everything except `A–Z a–z 0–9 - . _ ~ /` is encoded, hex in upper
-  case. Encoding is applied to the *decoded* value, so `%20` never becomes
-  `%2520`; a `%` not followed by two hex digits is a literal `%` and becomes
-  `%25`.
+  the first `#` into reference and fragment, and the reference at the first
+  `?` into path and query; `#` and `?` stay literal. In path and fragment
+  everything except `A–Z a–z 0–9 - . _ ~ /` is encoded; in the query also
+  the characters RFC 3986 allows there stay literal
+  (`! $ & ' ( ) * + , ; = : @ / ?`). Hex digits are upper case. The value is
+  split before it is decoded, and encoding is applied to the *decoded* value
+  of each part, so `%20` never becomes `%2520`; a `%` not
+  followed by two hex digits is a literal `%` and becomes `%25`.
 
 *Properties*
 
@@ -271,10 +316,14 @@ Two rules make the display unique and keep L1:
   Examples: `Eisen<strong>mangel</strong>` is written `Eisen.strong(mangel)`
   (no markers inside a word); `<sup>a b</sup>` is written `.sup(a b)`; an
   empty `<p></p>` is written `.p`, an empty `<h2></h2>` `.h2`.
-- **W2 — escape by reading.** Scanning left to right, the writer puts a
-  backslash before the first character of every construct the reader would
-  recognise in what is literal text — markers, block openers, tolerated forms
-  of §6, typed HTML — until the text reads back as the same tree. Reader and
+- **W2 — escape by reading.** Scanning left to right, wherever the reader
+  would begin a construct in what is literal text — markers, block openers,
+  tolerated forms of §6, typed HTML — the writer puts a backslash before the
+  construct's first ASCII punctuation character and reads on from there with
+  the escape in place, until the text reads back as the same tree. So
+  `<p>1. Mai</p>` is written `1\. Mai` (a backslash before `1` would be
+  literal), and `<p>**a** und **b**</p>` is written `\*\*a** und \*\*b**`:
+  after the first backslash the reader would still see `*a*`. Reader and
   writer SHOULD share one predicate for "the reader sees structure here", so
   that the two cannot drift apart.
 
@@ -300,7 +349,10 @@ tolerated forms of §6:
 | `<name` of a profile block element | typed HTML block (§6) |
 | `#####` and deeper than the profile | heading, reduced (§6) |
 
-Everything else is a text line. **Paragraphs** follow three rules:
+Everything else is a text line. Whitespace at the start of a text line that
+is not part of indented content (an element line's, a list item's) is not
+content (C7): `  Text` at the top level is the paragraph `Text`.
+**Paragraphs** follow three rules:
 
 1. A text line after a text line belongs to the same paragraph; the line break
    between them is a `<br>`.
@@ -313,6 +365,11 @@ callout as long as lines begin with `>`; a table as long as lines begin with
 `|`; a fence, a fenced container, a comment and a typed HTML block until their
 closing line, blank lines inside included; an element line by the indented
 lines below it, blank lines between them included.
+
+A fence or a fenced container that is never closed extends to the end of the
+unit. A typed HTML block that is never closed is not well-formed and stays
+text (§6); a comment that is never closed stays text and is reported
+(`unclosed-comment`) — neither may swallow what follows.
 
 So `## Dosis⏎Täglich 100 mg.` is a heading and a paragraph, and
 
@@ -329,7 +386,10 @@ Bei Erwachsenen 100 mg täglich.
 ```
 
 The writer puts exactly one blank line between two blocks of the same
-context.
+context. The blank line is empty, inside indented content too: it carries no
+indentation. The items of a list and the rows and cells of a table are not
+blocks of a context; the writer puts no blank line between them, in the
+short form and in the element-line form alike.
 
 ### 5.3 Short forms
 
@@ -359,9 +419,14 @@ attribute    = attribute-name "=" '"' value '"'
 token        = one or more Unicode letters, digits, "-" or "_"
 ```
 
-- `name` MUST be a **body** element of the profile. A line that does not match
-  completely, or names anything else (`….`, `.NET`, `.meta`), is text.
-- Inside a value, `\"` is a quote and `\\` a backslash.
+- `name` MUST be a **body** element of the profile, in lower case. A line that
+  does not match completely, or names anything else (`….`, `.NET`, `.meta`,
+  `.P`), is text. A void element takes no content, or an empty content
+  bracket: `.hr(x)` is text.
+- Attributes the profile does not allow, and an `id` on an inline element,
+  match the grammar: they are taken into the tree and reported (§3.3, §3.4).
+- Inside a value, `\"` is a quote and `\\` a backslash. The writer puts the
+  attributes in the bracket in the order of C11.
 - An `id` or class that is not a `token` (`v1.2`, `w-1/2`) is written in the
   attribute bracket: `[id="v1.2"]`, `[class="a w-1/2"]` — the whole class
   attribute then, not part of it. The reader accepts both places; the display
@@ -388,6 +453,7 @@ short form.)
 Elements with the content model *phrasing* take their indented content as
 phrasing. **Inside phrasing there are no element lines:** an indented line
 `.span.x(V)` under `.p.lead` is the inline long form, never a nested block.
+Several indented lines are joined by `<br>`, as in a paragraph (§5.2).
 
 ```
 .p.lead
@@ -416,6 +482,26 @@ The reader also accepts the content in brackets on the line itself
 No profile has inline elements at block level. A block-level line whose
 element is inline — `.span.warning(Vorsicht)`, `.img[alt="Röntgen"
 src="bild.png"]` — is therefore a **paragraph** containing that element.
+
+The one exception is a structure whose inner grammar admits an inline
+element directly, as the reference profile's `figure` admits `img`: there
+the line is that element itself, and it counts as a block of its context.
+A paragraph holding only that element is then written `.p` with the
+element indented below it.
+
+```
+.figure
+  .img[alt="Röntgen" src="bild.png"]
+
+  .figcaption(Thorax im Stehen)
+```
+
+```html
+<figure>
+  <img alt="Röntgen" src="bild.png">
+  <figcaption>Thorax im Stehen</figcaption>
+</figure>
+```
 
 ### 5.5 Inline
 
@@ -468,7 +554,8 @@ Examples: `2*3 und 4*5` is text. `10^9^/l` is a superscript;
 #### 5.5.3 Code spans
 
 A code span opens with a run of *n* backticks and closes at the next run of
-exactly *n* backticks. Its content is literal: no markers, no long forms, no
+exactly *n* backticks; a run without such a partner is literal text. Its
+content is literal: no markers, no long forms, no
 escapes. If the content both begins and ends with a space and is not all
 spaces, one space is removed from each end. The writer chooses *n* one longer
 than the longest run of backticks in the content, and pads with a space on
@@ -508,7 +595,8 @@ level**, up to the profile's list depth.
 ### 5.7 Blockquote
 
 `> ` on every line; there is no lazy continuation. A line `>` alone is an
-empty line inside the quote. Inside, §5.2 applies one level down.
+empty line inside the quote. `>` directly followed by text is accepted as
+`> `; the writer writes the space. Inside, §5.2 applies one level down.
 
 ### 5.8 Callouts
 
@@ -531,17 +619,29 @@ Eisenpräparate
 ```
 
 - **Caption:** a paragraph of exactly one text line directly above the grid,
-  without a blank line, is the `caption`. A caption of more than one line or
-  with blocks takes the element line form of the table.
+  without a blank line, is the `caption`. A paragraph of more than one line
+  directly above the grid is a paragraph, and the table has no caption. A
+  caption of more than one line or with blocks takes the element line form
+  of the table.
 - **Header:** all rows above the separator line are header rows (`thead`,
   cells `th`). Without a separator line the table has no `thead`. A header
   cell among the body rows begins with `= `.
+- **Separator line:** a cell of one or more `-`, optionally with `:` at
+  either end. Colons are accepted and dropped with the diagnostic
+  `alignment-dropped`.
+- **Rows that do not add up** — of unequal width once spans are counted —
+  are taken as typed; no cell is added. Such a table is displayed in element
+  lines (see below).
 - **Spans:** `^` as the sole content of a cell continues the cell above
   (rowspan), `<` the cell to the left (colspan). A cell reading `< 5` is text;
   a cell whose content really is `<` or `^` takes a backslash. A `|` inside a
   cell's text is `\|`.
 - Column widths and alignment are classes, never the separator line. The
-  writer pads each column to its widest cell, measured in graphemes.
+  writer pads each column to its widest cell, measured in graphemes of the
+  cell as displayed — a `= ` and backslashes included. The separator line
+  has as many `-` per column as the column is wide plus two.
+- A grid of more columns than the profile's maximum is valid input; it is
+  displayed in the cell-per-line form.
 
 The **cell-per-line form** opens with `|===` and the column count, and closes
 with `|===`:
@@ -564,7 +664,9 @@ Without the count, two cells of one row could not be told from two rows of
 one column. A cell begins at the start of a line with an optional prefix
 before the `|`: `2+` colspan, `.3+` rowspan, `2.3+` both, `[name="value" …]`
 attributes, `a` for block content indented on the following lines — in that
-order. `|---` ends the header rows; `= ` marks a header cell among body rows.
+order. A cell with `a` has nothing after the `|` on its line; its blocks
+follow, indented two spaces. `|---` ends the header rows; `= ` marks a header
+cell among body rows.
 A caption stands on the line above `|===`, as in the grid.
 
 What neither form can say — a `tfoot`, a `td` in a header row, a grid that
@@ -574,9 +676,13 @@ does not add up — is written as element lines.
 
 A run of three or more backticks opens a `pre`; a run of the same character,
 at least as long, alone on a line, closes it. Everything between is literal,
-dedented by the current level. The writer chooses a fence longer than any
-run of backticks at the start of a line in the content. The opening fence
-carries the classes of the `pre`, the way a Markdown fence carries a language:
+dedented by the current level. The content of the `pre` is the lines between
+the fences joined by line feeds: an empty `pre` is an opening fence directly
+followed by its closing fence, and content that ends with a line feed shows
+an empty last line. The writer chooses a fence longer than any run of
+backticks at the start of a line in the content. The opening fence carries
+the classes of the `pre`, separated by spaces (```` ```rust beispiel ````),
+the way a Markdown fence carries a language:
 
 ````
 ```rust
@@ -600,15 +706,17 @@ info string is `{=html}`:
 - For a block **outside the profile** (§3.3, §3.4) and for an **island**
   (§3.6), the content is the block's bytes exactly as stored.
 - For a block **inside the profile that no other form can say** — a `pre`
-  with an `id`, a `pre` holding elements as read from a foreign file — the
-  content is its canonical HTML.
+  with an `id` — the content is its canonical HTML. (A `pre` holding
+  elements, as a Markdown converter writes `pre > code`, is outside the
+  profile, because a `pre` contains text only.)
 - Either way it comes back unchanged.
 
 *(The `{=format}` info string is MacFarlane's proposal and Pandoc's syntax;
 Appendix B.)*
 
-A **comment** needs no fence: between blocks it stands on its own lines,
-inside phrasing it stays where it is. It is passed through and reported
+A **comment** needs no fence: between blocks it stands on its own lines and
+is separated like a block, with one blank line before and after it; inside
+phrasing it stays where it is. It is passed through and reported
 (`comment`), and it is never indexed as text.
 
 ### 5.12 Escaping
@@ -668,18 +776,27 @@ Details:
 - **Fenced containers.** A fence is three or more colons. For nesting, the
   outer fence MUST be longer than the inner one; a closing fence closes the
   innermost open fence of the same length. `::: name` with a space is
-  accepted.
+  accepted. A name that is not a block element of the profile is read as
+  Pandoc reads it, as a class of a `div`: `::: warnung` is
+  `<div class="warnung">`.
 - **Attribute braces.** Inside `{…}`: `#id`, `.class`, `name="value"`. A bare
   word is not accepted, because Pandoc reads it as a class and the element
-  line as an element. Attributes from braces and from an element line on the
-  same block are merged; a conflict is the diagnostic `attribute-conflict`.
+  line as an element; a line `{wichtig}` is text. Attributes from braces and
+  from an element line on the same block are merged, classes united in the
+  order braces, then element line. A conflict — two different values for the
+  same attribute — is the diagnostic `attribute-conflict`, and the element
+  line wins, because it is what the display shows.
 - **Typed HTML.** A typed fragment is parsed as HTML as a whole: inside it,
   character references are decoded and notation does not apply (no markers,
   no backslash escapes). It is taken only if it is well-formed and consists of
   profile elements and attributes; otherwise it stays literal text, with the
   diagnostic `html-not-taken`. A block fragment begins with a start tag at
   the start of a line and extends to its matching end tag, blank lines inside
-  included. *Outside* typed HTML, `&` is literal text: `&nbsp;` typed in
+  included. The writer escapes every `<` in literal text that begins
+  something shaped like a tag — `<` followed by a letter, `/` or `!` —
+  whether the reader would take it or not, so that reading the display back
+  never reports `html-not-taken`: `<p>Ein &lt;blink> Tag</p>` is written
+  `Ein \<blink> Tag`. *Outside* typed HTML, `&` is literal text: `&nbsp;` typed in
   notation is six characters (invisible characters are entered with an editor
   command and shown by the *invisible* span).
 - **Unknown callout types** are taken as an `aside` with the classes
@@ -801,9 +918,11 @@ an element line.
 - The writer depends on the registry (short form only for registered types),
   the reader too (element by weight). The stored HTML does not: it describes
   itself, and an export needs no registry.
-- If a type's weight changes, existing documents no longer match. The
-  implementation reports `callout-weight-mismatch` per affected document and
-  offers the conversion; it does not rewrite on reading (§3.3).
+- A callout whose element does not match its type's weight is reported
+  (`callout-weight-mismatch`) whenever it is read, and displayed as an element
+  line. This happens in particular when a type's weight changes: existing
+  documents no longer match, the implementation reports each and offers the
+  conversion; it does not rewrite on reading (§3.3).
 - Input aliases for type names MAY be configured (§8.6). They change the
   input, never the stored type.
 
@@ -866,7 +985,7 @@ features. They produce notation; they are not part of its grammar.
 ### 8.6 Aliases
 
 A user MAY define input aliases that map to canonical constructs — a German
-`:::hinweis` for `> [!note]`, a private marker for a frequent class. An editor:
+`> [!hinweis]` for `> [!note]`, a private marker for a frequent class. An editor:
 
 - MUST check an alias against the notation and other aliases before it takes
   effect, and refuse or warn when it shadows a construct;
@@ -909,9 +1028,11 @@ Implementations report by stable codes. This version defines:
 
 | Code | Meaning |
 |---|---|
-| `out-of-profile` | element or attribute outside the profile, passed through |
+| `out-of-profile` | element or attribute the profile does not know, passed through |
 | `limit-exceeded` | list depth, container depth or heading level beyond the profile |
-| `constraint-violated` | a constraint of §3.2 or §7.2 is broken (a callout in a list item) |
+| `constraint-violated` | profile elements arranged against a constraint of §3.2 or §7.2 (a callout in a list item) |
+| `island-rejected` | an island breaks the whitelist of its profile; passed through |
+| `alignment-dropped` | colons in a separator line were accepted and dropped |
 | `heading-level-reduced` | a heading deeper than the profile was reduced |
 | `html-not-taken` | typed HTML not well-formed or not in the profile; kept as text |
 | `unregistered-callout` | callout type not in the registry |
@@ -944,6 +1065,10 @@ change.
 
 - Each implementation reserves its own attribute prefix `data-<name>-` and
   MUST NOT use attributes outside it for its own purposes.
+- Attributes `data-<name>-*` of another implementation are kept, ordered by
+  C11, and not reported: they mean nothing to this implementation and change
+  nothing in the document. They are valid on every body element of every
+  profile.
 - An implementation MAY store content as a recipe — a query, a template —
   that is assembled when the document is viewed. Such a document is not
   complete without the implementation (an exception to P5) and MUST be marked

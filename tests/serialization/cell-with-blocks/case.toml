@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "C6: a cell with block content puts its blocks on lines of their own."

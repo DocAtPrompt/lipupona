@@ -1,0 +1,3 @@
+kind = "tolerance"
+section = "6"
+note = "On a conflict the element line wins and the conflict is reported."

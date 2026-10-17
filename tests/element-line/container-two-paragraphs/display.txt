@@ -1,0 +1,4 @@
+.div.spalte
+  Erster Absatz.
+
+  Zweiter Absatz.

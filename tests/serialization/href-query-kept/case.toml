@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "C12: in the query the characters RFC 3986 allows there stay literal; others are encoded."

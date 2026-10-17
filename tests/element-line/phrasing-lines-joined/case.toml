@@ -1,0 +1,3 @@
+kind = "roundtrip"
+section = "5.4.2"
+note = "Several indented phrasing lines are joined by <br>."

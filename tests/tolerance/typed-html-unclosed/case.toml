@@ -1,0 +1,3 @@
+kind = "tolerance"
+section = "6"
+note = "Typed HTML that is not well-formed stays text and is reported."

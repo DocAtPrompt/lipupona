@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "C7: whitespace next to a <br> is removed inside an inline element too."

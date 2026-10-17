@@ -1,0 +1,4 @@
+kind = "canonical"
+section = "4"
+note = "C2: CRLF line ends are accepted and written as LF."
+raw = true

@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "C9: the blank line before a heading inside a container carries no indentation."

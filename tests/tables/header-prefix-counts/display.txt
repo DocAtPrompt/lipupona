@@ -1,0 +1,4 @@
+| Merkmal  | A    |
+|----------|------|
+| = Beginn | akut |
+| Dauer    | kurz |

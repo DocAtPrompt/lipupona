@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "C6: an element with a block child puts every child on its own line, the phrasing run included."

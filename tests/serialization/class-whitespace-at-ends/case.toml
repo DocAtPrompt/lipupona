@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "C11: whitespace at the ends of the class attribute is removed."

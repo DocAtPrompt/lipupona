@@ -1,0 +1,3 @@
+kind = "roundtrip"
+section = "5.10"
+note = "Several classes of a pre stand in the fence, separated by spaces."

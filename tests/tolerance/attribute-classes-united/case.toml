@@ -1,0 +1,3 @@
+kind = "tolerance"
+section = "6"
+note = "Classes from braces and element line are united, braces first."

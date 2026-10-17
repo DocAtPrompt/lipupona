@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "A"
+note = "start=\"1\" is removed on canonicalisation."

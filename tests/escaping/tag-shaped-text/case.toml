@@ -1,0 +1,3 @@
+kind = "roundtrip"
+section = "6"
+note = "The writer escapes every < that begins something shaped like a tag."

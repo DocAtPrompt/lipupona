@@ -1,3 +1,0 @@
-kind = "canonical"
-section = "4"
-note = "C12: in a path without scheme ? and = are not exempt and are encoded."

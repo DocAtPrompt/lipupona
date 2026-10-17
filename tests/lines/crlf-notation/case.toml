@@ -1,0 +1,4 @@
+kind = "tolerance"
+section = "5.2"
+note = "Notation with CRLF line ends reads like notation with LF."
+raw = true

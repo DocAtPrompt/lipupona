@@ -1,0 +1,4 @@
+kind = "canonical"
+section = "4"
+note = "C1: a byte order mark is accepted and not written."
+raw = true

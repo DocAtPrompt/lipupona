@@ -1,0 +1,4 @@
+kind = "canonical"
+section = "4"
+note = "C2: input without a final line feed is accepted."
+raw = true

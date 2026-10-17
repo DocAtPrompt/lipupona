@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "C7: of two spaces separated only by tags, the first is kept."

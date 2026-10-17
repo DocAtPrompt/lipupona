@@ -1,0 +1,6 @@
+.div.beispiel
+  ```rust
+  fn main() {
+      let a = 1;
+  }
+  ```

@@ -1,0 +1,5 @@
+.figure
+  .p
+    .img[alt="Röntgen" src="bild.png"]
+
+  .figcaption(Thorax im Stehen)

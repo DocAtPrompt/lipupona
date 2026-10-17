@@ -1,0 +1,3 @@
+kind = "passthrough"
+section = "3.6"
+note = "An island that breaks its whitelist is passed through and reported."

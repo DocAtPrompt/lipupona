@@ -1,0 +1,3 @@
+kind = "passthrough"
+section = "3.6"
+note = "An island is passed through unread and not reported."

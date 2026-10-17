@@ -1,0 +1,3 @@
+```rust beispiel
+fn main() {}
+```

@@ -1,0 +1,9 @@
+.table
+  .tbody
+    .tr
+      .td(a)
+      .td(b)
+      .td(c)
+    .tr
+      .td(d)
+      .td(e)

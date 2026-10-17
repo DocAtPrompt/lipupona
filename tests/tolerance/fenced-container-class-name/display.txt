@@ -1,0 +1,2 @@
+.div.warnung
+  Nicht mit Tee.

@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "C7: whitespace at the start of a block is removed inside an inline element too."

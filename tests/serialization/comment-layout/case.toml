@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "C6: a comment between blocks stands on its own line at the blocks' indentation."

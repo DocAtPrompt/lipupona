@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "C7: whitespace at the end of a phrasing run that borders a block is removed."
