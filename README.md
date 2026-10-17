@@ -7,11 +7,12 @@
 
 # lipupona
 
-**Write HTML almost as easily as Markdown.**
+**Type like Markdown. Keep HTML.**
 
-lipupona is a proposal for a plain-text notation that maps to HTML and back
-without loss. You type something that feels like Markdown; what is stored is
-clean, canonical HTML that any browser opens as it is.
+Write HTML almost as easily as Markdown. lipupona is a proposal for a
+plain-text notation that maps to HTML and back without loss. You type
+something that feels like Markdown; what is stored is clean, canonical HTML
+that any browser opens as it is.
 
 ```
 > [!warning] Nicht mit Tee einnehmen
