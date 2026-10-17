@@ -8,9 +8,18 @@ pub enum Node {
     Element(Element),
     Text(Text),
     Comment(Comment),
-    /// Source bytes passed through unread: a block outside the profile
-    /// (SPEC §3.3) or an island (§3.6).
-    Verbatim(String),
+    /// Source passed through unread: a block outside the profile (SPEC
+    /// §3.3) or an island (§3.6).
+    Verbatim(Verbatim),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Verbatim {
+    /// The source, with LF line ends.
+    pub text: String,
+    /// Stands on a line of its own among blocks; otherwise it is part of a
+    /// run of phrasing.
+    pub block: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -56,10 +65,15 @@ impl Element {
         self.attr("class").unwrap_or("").split_ascii_whitespace()
     }
 
-    /// The source bytes of the element, as stored.
-    pub fn source<'a>(&self, src: &'a str) -> &'a str {
-        let s = &src[self.span.clone()];
-        if self.implied_end { s.trim_end() } else { s }
+    /// The source of the element in `input`, the text the element was read
+    /// from. Empty if the span does not lie in `input`.
+    pub fn source<'a>(&self, input: &'a str) -> &'a str {
+        let s = input.get(self.span.clone()).unwrap_or("");
+        if self.implied_end {
+            s.trim_end_matches(is_html_space)
+        } else {
+            s
+        }
     }
 }
 

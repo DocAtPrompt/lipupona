@@ -13,29 +13,20 @@ mod entities;
 
 use crate::dom::{Attr, Comment, Element, Node, Text};
 
-/// Prepares source text as an HTML parser sees it (SPEC C1, C2): without a
-/// byte order mark, with CRLF and CR turned into LF.
-pub fn preprocess(src: &str) -> String {
-    let src = src.strip_prefix('\u{feff}').unwrap_or(src);
-    let mut out = String::with_capacity(src.len());
-    let mut chars = src.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '\r' {
-            if chars.peek() == Some(&'\n') {
-                chars.next();
-            }
-            out.push('\n');
-        } else {
-            out.push(c);
-        }
-    }
-    out
-}
+/// Nesting deeper than this is not built; an element named [`TOO_DEEP`]
+/// marks the place, so that the block is passed through as stored. It keeps
+/// every walk over the tree within a fixed depth.
+pub const MAX_DEPTH: usize = 256;
 
-/// Parses preprocessed source and returns the children of `body`.
-pub fn parse(src: &str) -> Vec<Node> {
+/// The name of the element that marks nesting beyond [`MAX_DEPTH`].
+pub const TOO_DEEP: &str = "#too-deep";
+
+/// Parses the body of an HTML document and returns the children of `body`.
+/// Spans are byte offsets into `input`.
+pub fn parse(input: &str) -> Vec<Node> {
+    let prepared = prepare(input);
     let mut p = Parser {
-        src,
+        src: &prepared.text,
         pos: 0,
         stack: Vec::new(),
         root: Vec::new(),
@@ -43,7 +34,73 @@ pub fn parse(src: &str) -> Vec<Node> {
         ignore_lf: false,
     };
     p.run();
-    p.root
+    let mut nodes = p.root;
+    for node in nodes.iter_mut() {
+        remap(node, &prepared.removed);
+    }
+    nodes
+}
+
+/// Text with CRLF and CR turned into LF (C2). A U+FEFF stays: inside a
+/// document it is a character, not a byte order mark.
+pub fn lf(s: &str) -> String {
+    s.replace("\r\n", "\n").replace('\r', "\n")
+}
+
+/// The input as an HTML parser sees it (C1, C2): without a byte order mark,
+/// with CRLF and CR turned into LF.
+struct Prepared {
+    text: String,
+    /// Offsets in `text` from which on one more byte of the input lies
+    /// behind, in ascending order.
+    removed: Vec<usize>,
+}
+
+fn prepare(input: &str) -> Prepared {
+    let mut removed = Vec::new();
+    let body = match input.strip_prefix('\u{feff}') {
+        Some(rest) => {
+            removed.extend([0, 0, 0]);
+            rest
+        }
+        None => input,
+    };
+    let mut text = String::with_capacity(body.len());
+    let mut chars = body.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\r' {
+            text.push('\n');
+            if chars.peek() == Some(&'\n') {
+                chars.next();
+                removed.push(text.len());
+            }
+        } else {
+            text.push(c);
+        }
+    }
+    Prepared { text, removed }
+}
+
+fn original(pos: usize, removed: &[usize]) -> usize {
+    pos + removed.partition_point(|&r| r <= pos)
+}
+
+fn remap(node: &mut Node, removed: &[usize]) {
+    if removed.is_empty() {
+        return;
+    }
+    let span = match node {
+        Node::Element(e) => {
+            for c in e.children.iter_mut() {
+                remap(c, removed);
+            }
+            &mut e.span
+        }
+        Node::Text(t) => &mut t.span,
+        Node::Comment(c) => &mut c.span,
+        Node::Verbatim(_) => return,
+    };
+    *span = original(span.start, removed)..original(span.end, removed);
 }
 
 const VOID: &[&str] = &[
@@ -258,7 +315,7 @@ impl<'a> Parser<'a> {
                     return false;
                 }
                 let Some(tag) = scan_tag(rest, 2) else {
-                    return false;
+                    return self.unterminated();
                 };
                 self.pos += tag.len;
                 self.end_tag(&tag.name, start, self.pos);
@@ -266,7 +323,7 @@ impl<'a> Parser<'a> {
             }
             Some(b) if b.is_ascii_alphabetic() => {
                 let Some(tag) = scan_tag(rest, 1) else {
-                    return false;
+                    return self.unterminated();
                 };
                 self.pos += tag.len;
                 self.start_tag(tag, start);
@@ -274,6 +331,15 @@ impl<'a> Parser<'a> {
             }
             _ => false,
         }
+    }
+
+    /// A tag that runs to the end of the input. A browser drops it; here the
+    /// rest of the input stays text, so that nothing is lost.
+    fn unterminated(&mut self) -> bool {
+        let start = self.pos;
+        self.pos = self.src.len();
+        self.text(self.src[start..].to_string(), start..self.pos);
+        true
     }
 
     fn start_tag(&mut self, tag: Tag, start: usize) {
@@ -305,6 +371,23 @@ impl<'a> Parser<'a> {
         };
         if (foreign && tag.self_closing) || (!self.in_foreign() && VOID.contains(&name)) {
             self.append(Node::Element(el));
+            return;
+        }
+        if self.stack.len() >= MAX_DEPTH {
+            let marked = self.stack.last().is_some_and(|e| {
+                e.children
+                    .iter()
+                    .any(|c| matches!(c, Node::Element(m) if m.name == TOO_DEEP))
+            });
+            if !marked {
+                self.append(Node::Element(Element {
+                    name: TOO_DEEP.into(),
+                    attrs: Vec::new(),
+                    children: Vec::new(),
+                    span: start..end,
+                    implied_end: false,
+                }));
+            }
             return;
         }
         self.stack.push(el);
@@ -501,7 +584,9 @@ impl<'a> Parser<'a> {
     }
 
     fn pop(&mut self, end: usize, implied: bool) {
-        let mut el = self.stack.pop().expect("open element");
+        let Some(mut el) = self.stack.pop() else {
+            return;
+        };
         el.span.end = end.max(el.span.start);
         el.implied_end = implied;
         self.append(Node::Element(el));
@@ -529,7 +614,12 @@ impl<'a> Parser<'a> {
             Some(parent) => &mut parent.children,
             None => &mut self.root,
         };
-        if let Some(Node::Text(last)) = children.last_mut() {
+        // Text is joined only where nothing was skipped in between, so that
+        // a span never covers markup that is not in the tree.
+        if let Some(Node::Text(last)) = children
+            .last_mut()
+            .filter(|n| matches!(n, Node::Text(t) if t.span.end == span.start))
+        {
             last.text.push_str(&text);
             last.span.end = span.end;
         } else {
@@ -635,7 +725,7 @@ fn find_end_tag(s: &str, name: &str) -> Option<usize> {
         let at = i + off;
         let after = at + 2 + name.len();
         if after <= b.len()
-            && s[at + 2..after].eq_ignore_ascii_case(name)
+            && b[at + 2..after].eq_ignore_ascii_case(name.as_bytes())
             && (after == b.len() || is_space(b[after]) || matches!(b[after], b'/' | b'>'))
         {
             return Some(at);
@@ -759,7 +849,7 @@ fn numeric(code: u32) -> char {
         return '\u{fffd}';
     }
     if let Some(&(_, to)) = C1.iter().find(|(from, _)| *from == code) {
-        return char::from_u32(to).unwrap();
+        return char::from_u32(to).unwrap_or('\u{fffd}');
     }
     char::from_u32(code).unwrap_or('\u{fffd}')
 }

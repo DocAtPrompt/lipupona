@@ -8,13 +8,12 @@ use crate::profile::{Kind, Model, Profile};
 use crate::{Output, html, url};
 
 /// Reads HTML and writes it canonically. Blocks outside the profile and
-/// islands come back as they were stored.
-pub fn canon(src: &str, profile: &Profile) -> Output {
-    let src = html::preprocess(src);
-    let nodes = html::parse(&src);
+/// islands come back as they were stored, with LF line ends (C2).
+pub fn canon(input: &str, profile: &Profile) -> Output {
+    let nodes = html::parse(input);
     let mut diagnostics = Vec::new();
     report_comments(&nodes, &mut diagnostics);
-    let mut nodes = profile.check(&src, nodes, &mut diagnostics);
+    let mut nodes = profile.check(input, nodes, &mut diagnostics);
     normalize(&mut nodes, profile);
     Output {
         text: serialize(&nodes, profile),
@@ -198,6 +197,12 @@ pub fn serialize(nodes: &[Node], profile: &Profile) -> String {
     }
     let mut out = lines.join("\n");
     out.push('\n');
+    // A U+FEFF at the very start would read as a byte order mark (C1); it
+    // can only stand there as text passed through, where a reference means
+    // the same.
+    if let Some(rest) = out.strip_prefix('\u{feff}') {
+        out = format!("&#xFEFF;{rest}");
+    }
     out
 }
 
@@ -219,8 +224,8 @@ fn write_blocks(children: &[Node], level: usize, lines: &mut Vec<String>, profil
                     }
                     write_block(e, level, lines, profile);
                 }
-                Node::Verbatim(s) => lines.push(format!("{indent}{s}")),
-                _ => unreachable!(),
+                Node::Verbatim(v) => lines.push(format!("{indent}{}", v.text)),
+                _ => {}
             }
             first = false;
             i += 1;
@@ -291,7 +296,7 @@ fn write_phrasing(nodes: &[Node], out: &mut String) {
                 out.push_str(&c.text);
                 out.push_str("-->");
             }
-            Node::Verbatim(s) => out.push_str(s),
+            Node::Verbatim(v) => out.push_str(&v.text),
             Node::Element(e) => {
                 out.push_str(&start_tag(e));
                 if !is_void(&e.name) {
@@ -353,5 +358,144 @@ pub fn escape_attr(s: &str, out: &mut String) {
                 None => out.push(c),
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const FRAGMENTS: &[&str] = &[
+        "<p>",
+        "</p>",
+        "<ul>",
+        "<li>",
+        "</ul>",
+        "<ol start=1>",
+        "<table>",
+        "<tr>",
+        "<td>",
+        "</table>",
+        "<caption>",
+        "<div>",
+        "</div>",
+        "<aside>",
+        "<pre>",
+        "</pre>",
+        "<h2>",
+        "</h2>",
+        "<h5>",
+        "<details>",
+        "<summary>",
+        "<blockquote>",
+        "<figure>",
+        "<figcaption>",
+        "<template>",
+        "<span class=\"a  a\">",
+        "</span>",
+        "<em>",
+        "</strong>",
+        "<code>",
+        "<br>",
+        "</br>",
+        "<P>",
+        "<img src=\"a b\" alt>",
+        "<a href=\"%zz?x y#a#b\">",
+        "</a>",
+        "<svg data-test-rendered=x>",
+        "</svg>",
+        "<script>",
+        "</script>",
+        "<style>",
+        "<!--",
+        "-->",
+        "<!doctype html>",
+        "<head><title>t</title></head>",
+        "<body>",
+        "<ü>",
+        "</ü>",
+        "<",
+        ">",
+        "</",
+        "&",
+        "&amp;",
+        "&#x",
+        "&#0;",
+        "&uuml",
+        ";",
+        "=",
+        "'",
+        "\"",
+        "\n",
+        "\r\n",
+        "\r",
+        "\t",
+        " ",
+        "\u{feff}",
+        "\u{a0}",
+        "u\u{308}",
+        "ü",
+        "text",
+        "x",
+        "<p class=",
+    ];
+
+    fn inputs() -> impl Iterator<Item = String> {
+        let mut state: u64 = 0x9e37_79b9_7f4a_7c15;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        (0..5_000).map(move |_| {
+            let len = (next() % 24) as usize;
+            (0..len)
+                .map(|_| FRAGMENTS[(next() % FRAGMENTS.len() as u64) as usize])
+                .collect()
+        })
+    }
+
+    #[test]
+    fn never_panics_and_is_idempotent() {
+        let profile = Profile::reference("test");
+        for input in inputs() {
+            let once = canon(&input, &profile).text;
+            let twice = canon(&once, &profile).text;
+            assert_eq!(once, twice, "L4 broken for input {input:?}");
+        }
+    }
+
+    #[test]
+    fn deep_nesting_is_passed_through() {
+        let profile = Profile::reference("test");
+        for tag in ["div", "span", "blockquote", "table", "li"] {
+            let input = format!("<{tag}>").repeat(10_000);
+            let out = canon(&input, &profile);
+            assert!(
+                out.diagnostics.iter().any(|d| d.code.is_blocking()),
+                "{tag}"
+            );
+            assert_eq!(canon(&out.text, &profile).text, out.text, "{tag}");
+            if tag != "li" {
+                // One element inside the next: one block, passed through whole.
+                assert_eq!(out.text, format!("{input}\n"), "{tag}");
+            }
+        }
+    }
+
+    #[test]
+    fn spans_refer_to_the_input() {
+        let input = "\u{feff}<p>a</p>\r\n<ul>\r\n<li>b\r\n</ul>";
+        let nodes = html::parse(input);
+        let ul = nodes.iter().filter_map(Node::element).nth(1).unwrap();
+        assert_eq!(ul.source(input), "<ul>\r\n<li>b\r\n</ul>");
+    }
+
+    #[test]
+    fn passed_through_blocks_get_lf() {
+        let profile = Profile::reference("test");
+        let out = canon("<section>\r\n<p>a</p>\r\n</section>\r\n", &profile);
+        assert_eq!(out.text, "<section>\n<p>a</p>\n</section>\n");
     }
 }

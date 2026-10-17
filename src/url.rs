@@ -60,7 +60,7 @@ fn encode(part: &str, keep: &[u8]) -> String {
             && b[i + 1].is_ascii_hexdigit()
             && b[i + 2].is_ascii_hexdigit()
         {
-            decoded.push(u8::from_str_radix(&part[i + 1..i + 3], 16).unwrap());
+            decoded.push(hex(b[i + 1]) << 4 | hex(b[i + 2]));
             i += 3;
         } else {
             decoded.push(b[i]);
@@ -80,6 +80,14 @@ fn encode(part: &str, keep: &[u8]) -> String {
         }
     }
     out
+}
+
+fn hex(b: u8) -> u8 {
+    match b {
+        b'0'..=b'9' => b - b'0',
+        b'a'..=b'f' => b - b'a' + 10,
+        _ => b.to_ascii_uppercase().wrapping_sub(b'A').wrapping_add(10),
+    }
 }
 
 #[cfg(test)]

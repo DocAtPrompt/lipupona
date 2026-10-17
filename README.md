@@ -89,6 +89,8 @@ Version 0.1.0, a draft for review.
 - [`tests/`](tests/) — the test suite, 320 cases in a language-neutral format
 - [`docs/converters.md`](docs/converters.md) — work plan for md2lipupona and
   html2lipupona
+- [`docs/ports.md`](docs/ports.md) — plan for bindings and ports, and the
+  constraints on the core that keep them possible
 - `src/` — the reference implementation in Rust: canonical serialization
   and the profile check work and pass their test cases; the notation reader
   and writer are next. `cargo test` runs the suite.

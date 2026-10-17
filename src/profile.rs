@@ -2,18 +2,18 @@
 //! that decides what is inside the profile and what is passed through.
 
 use crate::diag::{Code, Diagnostic};
-use crate::dom::{Element, Node};
-use crate::url;
+use crate::dom::{Element, Node, Verbatim, is_html_space};
+use crate::{html, url};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Kind {
+pub(crate) enum Kind {
     Block,
     Inline,
 }
 
 /// Content models of §3.1, with the inner grammars of the structures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Model {
+pub(crate) enum Model {
     Phrasing,
     Blocks,
     Either,
@@ -34,19 +34,21 @@ pub enum Model {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Weight {
+pub(crate) enum Weight {
     Core,
     Aside,
 }
 
+/// A profile. The only one so far is the reference profile; its tables are
+/// internal, and callers see it through plain values.
 #[derive(Debug, Clone)]
 pub struct Profile {
     /// The implementation's name in `data-<name>-*`.
-    pub implementation: String,
-    pub container_depth: usize,
-    pub list_depth: usize,
-    pub grid_columns: usize,
-    pub callouts: Vec<(&'static str, Weight)>,
+    implementation: String,
+    container_depth: usize,
+    list_depth: usize,
+    grid_columns: usize,
+    callouts: Vec<(&'static str, Weight)>,
 }
 
 impl Profile {
@@ -67,7 +69,17 @@ impl Profile {
         }
     }
 
-    pub fn element(&self, name: &str) -> Option<(Kind, Model)> {
+    /// The implementation's name in `data-<name>-*`.
+    pub fn implementation(&self) -> &str {
+        &self.implementation
+    }
+
+    /// The maximum column count of the pipe grid.
+    pub fn grid_columns(&self) -> usize {
+        self.grid_columns
+    }
+
+    pub(crate) fn element(&self, name: &str) -> Option<(Kind, Model)> {
         use Kind::*;
         use Model::*;
         Some(match name {
@@ -91,23 +103,23 @@ impl Profile {
         })
     }
 
-    pub fn kind(&self, name: &str) -> Option<Kind> {
+    pub(crate) fn kind(&self, name: &str) -> Option<Kind> {
         self.element(name).map(|(k, _)| k)
     }
 
-    pub fn model(&self, name: &str) -> Option<Model> {
+    pub(crate) fn model(&self, name: &str) -> Option<Model> {
         self.element(name).map(|(_, m)| m)
     }
 
-    pub fn is_block(&self, node: &Node) -> bool {
+    pub(crate) fn is_block(&self, node: &Node) -> bool {
         match node {
             Node::Element(e) => self.kind(&e.name) == Some(Kind::Block),
-            Node::Verbatim(_) => true,
+            Node::Verbatim(v) => v.block,
             _ => false,
         }
     }
 
-    pub fn weight(&self, callout_type: &str) -> Option<Weight> {
+    pub(crate) fn weight(&self, callout_type: &str) -> Option<Weight> {
         self.callouts
             .iter()
             .find(|(n, _)| *n == callout_type)
@@ -115,7 +127,7 @@ impl Profile {
     }
 
     /// The type of a callout: the class after the marker class `callout`.
-    pub fn callout_type<'e>(&self, el: &'e Element) -> Option<&'e str> {
+    pub(crate) fn callout_type<'e>(&self, el: &'e Element) -> Option<&'e str> {
         let mut classes = el.classes();
         if classes.next() != Some("callout") {
             return None;
@@ -126,7 +138,7 @@ impl Profile {
         classes.next()
     }
 
-    pub fn is_container(&self, el: &Element) -> bool {
+    pub(crate) fn is_container(&self, el: &Element) -> bool {
         match el.name.as_str() {
             "div" | "aside" => true,
             "details" => self.callout_type(el).is_some(),
@@ -138,7 +150,7 @@ impl Profile {
         format!("data-{}-rendered", self.implementation)
     }
 
-    pub fn is_island(&self, el: &Element) -> bool {
+    pub(crate) fn is_island(&self, el: &Element) -> bool {
         let marker = self.island_marker();
         el.attrs.iter().any(|a| a.name == marker)
     }
@@ -146,7 +158,12 @@ impl Profile {
     /// Checks the children of `body`. Every top-level block that breaks the
     /// profile becomes a verbatim copy of its source (§3.3, §3.4); islands
     /// become verbatim wherever they stand (§3.6).
-    pub fn check(&self, src: &str, nodes: Vec<Node>, diags: &mut Vec<Diagnostic>) -> Vec<Node> {
+    pub(crate) fn check(
+        &self,
+        src: &str,
+        nodes: Vec<Node>,
+        diags: &mut Vec<Diagnostic>,
+    ) -> Vec<Node> {
         let ctx = Ctx {
             parent: "body",
             model: Model::Blocks,
@@ -155,22 +172,85 @@ impl Profile {
             in_structure: false,
         };
         let mut out = Vec::with_capacity(nodes.len());
+        let mut run = Vec::new();
         for node in nodes {
+            let phrasing = match &node {
+                Node::Text(_) => true,
+                Node::Element(e) => self.kind(&e.name) == Some(Kind::Inline) && !self.is_island(e),
+                _ => false,
+            };
+            if phrasing {
+                run.push(node);
+                continue;
+            }
+            self.check_top_run(src, std::mem::take(&mut run), &mut out, diags);
             let mut found = Vec::new();
             let source = match &node {
-                Node::Element(e) => Some(e.source(src).to_string()),
-                Node::Text(t) => Some(src[t.span.clone()].trim().to_string()),
+                Node::Element(e) => Some(html::lf(e.source(src))),
                 _ => None,
             };
             let node = self.check_node(src, node, &ctx, &mut found);
             let blocking = found.iter().any(|d| d.code.is_blocking());
             diags.extend(found);
             match (blocking, source) {
-                (true, Some(source)) => out.push(Node::Verbatim(source)),
+                (true, Some(text)) => out.push(Node::Verbatim(Verbatim { text, block: true })),
                 _ => out.push(node),
             }
         }
+        self.check_top_run(src, run, &mut out, diags);
         out
+    }
+
+    /// Text and inline elements directly in `body` break the constraint that
+    /// `body` holds blocks. A run of them is passed through as one piece, from
+    /// its first to its last non-blank node.
+    fn check_top_run(
+        &self,
+        src: &str,
+        run: Vec<Node>,
+        out: &mut Vec<Node>,
+        diags: &mut Vec<Diagnostic>,
+    ) {
+        let span = |n: &Node| match n {
+            Node::Text(t) => Some(t.span.clone()),
+            Node::Element(e) => Some(e.span.clone()),
+            _ => None,
+        };
+        let content: Vec<&Node> = run.iter().filter(|n| !n.is_blank_text()).collect();
+        let (Some(first), Some(last)) = (content.first(), content.last()) else {
+            out.extend(run);
+            return;
+        };
+        let (Some(start), Some(end)) = (span(first).map(|s| s.start), span(last).map(|s| s.end))
+        else {
+            out.extend(run);
+            return;
+        };
+        diags.push(Diagnostic::new(
+            Code::ConstraintViolated,
+            "text or inline elements directly in <body>",
+        ));
+        let ctx = Ctx {
+            parent: "p",
+            model: Model::Phrasing,
+            container_depth: 0,
+            list_depth: 0,
+            in_structure: false,
+        };
+        for node in run {
+            if let Node::Element(_) = node {
+                self.check_node(src, node, &ctx, diags);
+            }
+        }
+        let text = src.get(start..end).unwrap_or("");
+        let text = html::lf(text);
+        let text = text.trim_matches(is_html_space);
+        if !text.is_empty() {
+            out.push(Node::Verbatim(Verbatim {
+                text: text.to_string(),
+                block: true,
+            }));
+        }
     }
 
     fn check_node(&self, src: &str, node: Node, ctx: &Ctx, out: &mut Vec<Diagnostic>) -> Node {
@@ -196,6 +276,13 @@ impl Profile {
         ctx: &Ctx,
         out: &mut Vec<Diagnostic>,
     ) -> Node {
+        if self.is_island(&el) && el.implied_end {
+            out.push(Diagnostic::new(
+                Code::OutOfProfile,
+                format!("island <{}> without its end tag", el.name),
+            ));
+            return Node::Element(el);
+        }
         if self.is_island(&el) {
             if let Some(why) = island_violation(&el) {
                 out.push(Diagnostic::new(
@@ -203,7 +290,18 @@ impl Profile {
                     format!("<{}>: {why}", el.name),
                 ));
             }
-            return Node::Verbatim(el.source(src).to_string());
+            let block = !matches!(ctx.model, Model::Phrasing | Model::Lead | Model::Either);
+            return Node::Verbatim(Verbatim {
+                text: html::lf(el.source(src)),
+                block,
+            });
+        }
+        if el.name == html::TOO_DEEP {
+            out.push(Diagnostic::new(
+                Code::LimitExceeded,
+                format!("nesting deeper than {} elements", html::MAX_DEPTH),
+            ));
+            return Node::Element(el);
         }
         let Some((kind, model)) = self.element(&el.name) else {
             out.push(Diagnostic::new(

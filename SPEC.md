@@ -163,7 +163,8 @@ An element or attribute outside the profile is not part of the format. An
 implementation:
 
 - MUST NOT drop it silently — that would be data loss;
-- MUST pass it through verbatim and report it (`out-of-profile`);
+- MUST pass it through verbatim and report it (`out-of-profile`). Verbatim
+  means the bytes of the block as stored, with line ends written as LF (C2);
 - MUST NOT rewrite a document merely because it was read. Canonicalisation
   happens on saving.
 
@@ -262,8 +263,8 @@ A canonical document has exactly one byte sequence. The rules apply to the
   inside `pre` as everywhere. **A `pre` contains text only**; a language is a
   class on the `pre`.
 - **C9** One blank line before every heading, except a heading that is the
-  first child of `body` or of a container; no blank lines anywhere else. A
-  blank line is empty: it carries no indentation.
+  first child of its parent — `body`, a container or a structure; no blank
+  lines anywhere else. A blank line is empty: it carries no indentation.
 
 *Tags and attributes*
 
