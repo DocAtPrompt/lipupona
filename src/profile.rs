@@ -319,10 +319,7 @@ impl Profile {
             });
         }
         if el.name == html::TOO_DEEP {
-            out.push(Diagnostic::new(
-                Code::LimitExceeded,
-                format!("nesting deeper than {} elements", html::MAX_DEPTH),
-            ));
+            out.push(html::too_deep());
             return Node::Element(el);
         }
         let Some((kind, model)) = self.element(&el.name) else {

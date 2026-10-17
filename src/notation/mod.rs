@@ -3,6 +3,7 @@
 
 mod block;
 mod inline;
+mod scan;
 mod syntax;
 mod table;
 mod write;
@@ -24,7 +25,12 @@ pub fn html(notation: &str, profile: &Profile) -> Output {
     // what was written. A tree no parser builds — an `li` directly in an
     // `li` — is stored as a parser reads it back.
     let text = canon::serialize(&nodes, profile);
-    let (nodes, _) = canon::read(&text, profile);
+    let (nodes, back) = canon::read(&text, profile);
+    // Typed HTML can take the tree past the cap that the reader keeps.
+    let too_deep = crate::html::too_deep();
+    if back.contains(&too_deep) && !diagnostics.contains(&too_deep) {
+        diagnostics.push(too_deep);
+    }
     Output {
         text: canon::serialize(&nodes, profile),
         diagnostics,
@@ -302,6 +308,84 @@ mod tests {
                 .map(|_| NOTATION[(next() % NOTATION.len() as u64) as usize])
                 .collect()
         })
+    }
+
+    /// Notation nested beyond `html::MAX_DEPTH` in every way the reader
+    /// nests: it is reported, keeps its text and reads back from its display.
+    #[test]
+    fn deep_notation_is_bounded() {
+        let profile = Profile::reference("test");
+        let deep = 300;
+        let inputs = [
+            format!("{}Eisen\n", "> ".repeat(2_000)),
+            format!("{}Eisen\n", ">".repeat(2_000)),
+            (0..deep)
+                .map(|k| format!("{}- Eisen\n", "  ".repeat(k)))
+                .collect(),
+            (0..deep)
+                .map(|k| format!("{}.div\n", "  ".repeat(k)))
+                .chain(std::iter::once(format!("{}Eisen\n", "  ".repeat(deep))))
+                .collect(),
+            (0..deep)
+                .map(|k| format!("{} div\n", ":".repeat(3 + deep - k)))
+                .chain(std::iter::once("Eisen\n".to_string()))
+                .chain((0..deep).map(|k| format!("{}\n", ":".repeat(4 + k))))
+                .collect(),
+            format!("{}Eisen{}\n", ".span(".repeat(2_000), ")".repeat(2_000)),
+            format!("{}Eisen{}\n", "[".repeat(2_000), "](x)".repeat(2_000)),
+            format!("{}Eisen{}\n", ".em([".repeat(1_000), "](x))".repeat(1_000)),
+            // Beyond the cap only through typed HTML, seen on reading back.
+            format!(
+                "{}{}Eisen{}\n",
+                "> ".repeat(200),
+                "<span>".repeat(100),
+                "</span>".repeat(100)
+            ),
+        ];
+        for input in inputs {
+            let head: String = input.chars().take(12).collect();
+            let h = super::html(&input, &profile);
+            assert!(
+                h.diagnostics
+                    .iter()
+                    .any(|d| d.code == crate::Code::LimitExceeded),
+                "{head:?}: {:?}",
+                h.diagnostics.iter().take(3).collect::<Vec<_>>()
+            );
+            assert!(h.text.contains("Eisen"), "{head:?}");
+            let d = display(&h.text, &profile).text;
+            assert_eq!(super::html(&d, &profile).text, h.text, "{head:?}");
+        }
+    }
+
+    /// Many openers without a partner, in every construct whose closer is
+    /// searched for: each was quadratic once (seconds to minutes at this
+    /// size), and each reads back from its display.
+    #[test]
+    fn unclosed_openers_stay_linear() {
+        let profile = Profile::reference("test");
+        let n = 8_000;
+        let ticks: String = (1..200).map(|k| "`".repeat(k) + "a").collect();
+        let inputs = [
+            "**a ".repeat(n),
+            "==a ".repeat(n),
+            "^a ".repeat(n),
+            "[a ".repeat(n),
+            "[a](b ".repeat(n),
+            ".em(a ".repeat(n),
+            ".a".repeat(5 * n),
+            ".span.a".repeat(n),
+            format!("{}</b>", "<b>a ".repeat(n)),
+            ticks,
+            "<div>\n".repeat(n),
+            "<!-- a\n".repeat(n),
+        ];
+        for input in inputs {
+            let head: String = input.chars().take(12).collect();
+            let h = super::html(&input, &profile).text;
+            let d = display(&h, &profile).text;
+            assert_eq!(super::html(&d, &profile).text, h, "{head:?}");
+        }
     }
 
     /// L2/L3 for generated notation, valid or not: what it reads as is

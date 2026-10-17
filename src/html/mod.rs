@@ -21,6 +21,14 @@ pub const MAX_DEPTH: usize = 256;
 /// The name of the element that marks nesting beyond [`MAX_DEPTH`].
 pub const TOO_DEEP: &str = "#too-deep";
 
+/// The report for nesting beyond [`MAX_DEPTH`], in HTML or in notation.
+pub(crate) fn too_deep() -> crate::Diagnostic {
+    crate::Diagnostic::new(
+        crate::Code::LimitExceeded,
+        format!("nesting deeper than {MAX_DEPTH} elements"),
+    )
+}
+
 /// Parses the body of an HTML document and returns the children of `body`.
 /// Spans are byte offsets into `input`.
 pub fn parse(input: &str) -> Vec<Node> {
@@ -639,13 +647,25 @@ impl<'a> Parser<'a> {
 /// `s` begins with a start tag, and the fragment runs to its matching end
 /// tag, or is the tag alone for a void element. None when the fragment is
 /// not closed.
-pub(crate) fn fragment_len(s: &str) -> Option<usize> {
+///
+/// `s` begins at byte `base` of a longer text. `ends` keeps, for start tags
+/// of one name in that text, where their elements end, so that many
+/// unclosed tags cost linear time: a nested element is the same search from
+/// its own start tag. It must be used for one name and one end of text only.
+pub(crate) fn fragment_len_in(
+    s: &str,
+    base: usize,
+    ends: &mut std::collections::HashMap<usize, Option<usize>>,
+) -> Option<usize> {
     let tag = scan_tag(s, 1)?;
     if VOID.contains(&tag.name.as_str()) || tag.self_closing {
         return Some(tag.len);
     }
+    if let Some(&end) = ends.get(&base) {
+        return end.map(|e| e - base);
+    }
     let b = s.as_bytes();
-    let mut depth = 1;
+    let mut open = vec![0];
     let mut i = tag.len;
     while let Some(off) = s[i..].find('<') {
         let at = i + off;
@@ -656,20 +676,34 @@ pub(crate) fn fragment_len(s: &str) -> Option<usize> {
             .is_some_and(|n| n.eq_ignore_ascii_case(tag.name.as_bytes()));
         let after = b.get(at + from + tag.name.len()).copied();
         let boundary = after.is_none_or(|c| is_space(c) || c == b'>' || c == b'/');
-        if named && boundary {
-            let inner = scan_tag(&s[at..], from)?;
-            if end_tag {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(at + inner.len);
-                }
-            } else {
-                depth += 1;
-            }
-            i = at + inner.len;
-        } else {
+        if !(named && boundary) {
             i = at + 1;
+            continue;
         }
+        let Some(inner) = scan_tag(&s[at..], from) else {
+            break;
+        };
+        if end_tag {
+            if let Some(start) = open.pop() {
+                ends.insert(base + start, Some(base + at + inner.len));
+            }
+            if open.is_empty() {
+                return Some(at + inner.len);
+            }
+        } else {
+            match ends.get(&(base + at)) {
+                Some(&Some(end)) => {
+                    i = end - base;
+                    continue;
+                }
+                Some(None) => break,
+                None => open.push(at),
+            }
+        }
+        i = at + inner.len;
+    }
+    for start in open {
+        ends.insert(base + start, None);
     }
     None
 }

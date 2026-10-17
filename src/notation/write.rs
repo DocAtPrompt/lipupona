@@ -5,6 +5,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use super::block::{self, SP, callout_line};
 use super::inline::{self, Inline};
+use super::scan::Scan;
 use super::syntax::{self, is_token};
 use crate::canon;
 use crate::dom::{Element, Node};
@@ -746,6 +747,9 @@ impl<'p> Writer<'p> {
 
     /// W2: a backslash before the first character of every construct the
     /// reader would see in literal text, reading on with each escape in place.
+    /// An escape changes nothing the reader sees after it, and of what lies
+    /// before only the escaped character: the checks run on the text as it
+    /// is, and the backslashes are put in at the end.
     fn escape(&self, mut p: Pieces, mode: Mode, aggressive: bool) -> String {
         if mode == Mode::Bracket {
             p.balance_parens();
@@ -756,8 +760,10 @@ impl<'p> Writer<'p> {
                 p.literal.insert(n, false);
             }
         }
-        let mut c = p.chars;
-        let mut lit = p.literal;
+        let c = p.chars;
+        let lit = p.literal;
+        let mut scan = Scan::new(&c);
+        let mut escaped = vec![false; c.len()];
         let mut i = 0;
         while i < c.len() {
             if !lit[i] {
@@ -774,7 +780,7 @@ impl<'p> Writer<'p> {
                 target = block::opener_escape(self.profile, &c[i..end]).map(|k| i + k);
             }
             if target.is_none() {
-                target = inline::construct_at(self.profile, &c, i, c.len());
+                target = inline::construct_at(self.profile, &mut scan, &c, i, c.len());
             }
             if target.is_none() && mode == Mode::Cell && c[i] == '|' {
                 target = Some(i);
@@ -789,14 +795,19 @@ impl<'p> Writer<'p> {
             }
             match target.filter(|&k| k < c.len() && lit[k]) {
                 Some(k) => {
-                    c.insert(k, '\\');
-                    lit.insert(k, false);
-                    i = k + 2;
+                    escaped[k] = true;
+                    i = k + 1;
                 }
                 None => i += 1,
             }
         }
-        let mut s: String = c.iter().collect();
+        let mut s = String::with_capacity(c.len());
+        for (&ch, &esc) in c.iter().zip(&escaped) {
+            if esc {
+                s.push('\\');
+            }
+            s.push(ch);
+        }
         match mode {
             Mode::Cell => {
                 if s == "^" || s == "<" || s.starts_with("= ") || s == "=" {

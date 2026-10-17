@@ -1,6 +1,8 @@
 //! The grammar shared by the element line (SPEC §5.4.1) and the inline long
 //! form (§5.5.1): `.name#id.class[attr="value"](content)`.
 
+use super::scan::Scan;
+
 /// A parsed selector. Positions are indices into the `char` slice it was
 /// read from.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -25,8 +27,28 @@ pub(crate) fn is_token(s: &str) -> bool {
     !s.is_empty() && s.chars().all(is_token_char)
 }
 
-/// Reads a selector at `c[i] == '.'`, up to `end`.
-pub(crate) fn selector(c: &[char], i: usize, end: usize) -> Option<Selector> {
+/// Where the parts of a selector at `c[i] == '.'` are, up to `end`: found
+/// without collecting them, so that a check at every position stays linear.
+pub(crate) struct Shape {
+    pub name: (usize, usize),
+    chain: (usize, usize),
+    attrs: Option<(usize, usize)>,
+    pub content: Option<(usize, usize)>,
+    pub end: usize,
+}
+
+impl Shape {
+    pub(crate) fn name(&self, c: &[char]) -> String {
+        c[self.name.0..self.name.1].iter().collect()
+    }
+
+    pub(crate) fn has_attr_bracket(&self) -> bool {
+        self.attrs.is_some()
+    }
+}
+
+/// The shape of a selector at `c[i] == '.'`, up to `end`.
+pub(crate) fn shape(scan: &mut Scan, c: &[char], i: usize, end: usize) -> Option<Shape> {
     if c.get(i) != Some(&'.') {
         return None;
     }
@@ -38,42 +60,67 @@ pub(crate) fn selector(c: &[char], i: usize, end: usize) -> Option<Selector> {
     while j < end && (c[j].is_ascii_lowercase() || c[j].is_ascii_digit()) {
         j += 1;
     }
+    let name = (start, j);
+    // `#id` and `.class`, in any order, the id at most once.
+    let chain = (j, scan.chain_end(c, j, end));
+    j = chain.1;
+    let mut attrs = None;
+    if j < end && c[j] == '[' {
+        let next = scan.attrs_end(c, j, end)?;
+        attrs = Some((j, next));
+        j = next;
+    }
+    let mut content = None;
+    if j < end && c[j] == '(' {
+        let close = scan.paren_close(c, j + 1, end)?;
+        content = Some((j + 1, close));
+        j = close + 1;
+    }
+    Some(Shape {
+        name,
+        chain,
+        attrs,
+        content,
+        end: j,
+    })
+}
+
+/// The selector of a shape, collected.
+pub(crate) fn build(c: &[char], shape: &Shape) -> Selector {
     let mut sel = Selector {
-        name: c[start..j].iter().collect(),
+        name: shape.name(c),
+        content: shape.content,
+        end: shape.end,
+        has_attr_bracket: shape.attrs.is_some(),
         ..Selector::default()
     };
-    // `#id` and `.class`, in any order, the id at most once.
-    while j < end && (c[j] == '#' || c[j] == '.') {
-        let mark = c[j];
+    let (mut j, chain_end) = shape.chain;
+    while j < chain_end {
         let t = j + 1;
         let mut k = t;
-        while k < end && is_token_char(c[k]) {
+        while k < chain_end && is_token_char(c[k]) {
             k += 1;
         }
-        if k == t || (mark == '#' && sel.id.is_some()) {
-            break;
-        }
         let token: String = c[t..k].iter().collect();
-        if mark == '#' {
+        if c[j] == '#' {
             sel.id = Some(token);
         } else {
             sel.classes.push(token);
         }
         j = k;
     }
-    if j < end && c[j] == '[' {
-        let (attrs, next) = attributes(c, j, end)?;
-        sel.attrs = attrs;
-        sel.has_attr_bracket = true;
-        j = next;
+    if let Some((a, b)) = shape.attrs {
+        sel.attrs = attributes(c, a, b)
+            .map(|(attrs, _)| attrs)
+            .unwrap_or_default();
     }
-    if j < end && c[j] == '(' {
-        let close = closing_paren(c, j + 1, end)?;
-        sel.content = Some((j + 1, close));
-        j = close + 1;
-    }
-    sel.end = j;
-    Some(sel)
+    sel
+}
+
+/// Reads a selector at `c[i] == '.'`, up to `end`.
+pub(crate) fn selector(c: &[char], i: usize, end: usize) -> Option<Selector> {
+    let shape = shape(&mut Scan::new(c), c, i, end)?;
+    Some(build(c, &shape))
 }
 
 /// `[name="value" …]` at `c[i] == '['`. Inside a value `\"` is a quote and
@@ -127,77 +174,6 @@ fn attributes(c: &[char], i: usize, end: usize) -> Option<(Vec<(String, String)>
             return None;
         }
     }
-}
-
-/// The index after a comment at `c[i]`, if one begins there and is closed.
-pub(crate) fn skip_comment(c: &[char], i: usize, end: usize) -> Option<usize> {
-    let open = ['<', '!', '-', '-'];
-    if i + 4 > end || c[i..i + 4] != open {
-        return None;
-    }
-    (i + 4..end.saturating_sub(2))
-        .find(|&k| c[k..k + 3] == ['-', '-', '>'])
-        .map(|k| k + 3)
-}
-
-/// The index of the `)` that closes a round bracket whose content begins at
-/// `from`: brackets nest, `\(` and `\)` do not count, code spans and
-/// comments are skipped.
-pub(crate) fn closing_paren(c: &[char], from: usize, end: usize) -> Option<usize> {
-    let mut depth = 0usize;
-    let mut j = from;
-    while j < end {
-        if let Some(next) = skip_comment(c, j, end) {
-            j = next;
-            continue;
-        }
-        match c[j] {
-            '\\' if j + 1 < end && c[j + 1].is_ascii_punctuation() => j += 1,
-            '`' => {
-                if let Some((_, next)) = code_span(c, j, end) {
-                    j = next;
-                    continue;
-                }
-                while j + 1 < end && c[j + 1] == '`' {
-                    j += 1;
-                }
-            }
-            '(' => depth += 1,
-            ')' if depth == 0 => return Some(j),
-            ')' => depth -= 1,
-            _ => {}
-        }
-        j += 1;
-    }
-    None
-}
-
-/// A code span at `c[i] == '`'` (§5.5.3): its content and the index after
-/// it, or None when no run of the same length closes it.
-pub(crate) fn code_span(c: &[char], i: usize, end: usize) -> Option<(String, usize)> {
-    let run = |k: usize| c[k..end].iter().take_while(|&&x| x == '`').count();
-    let n = run(i);
-    let mut j = i + n;
-    while j < end {
-        if c[j] == '`' {
-            let m = run(j);
-            if m == n {
-                let mut content: String = c[i + n..j].iter().collect();
-                if content.len() >= 2
-                    && content.starts_with(' ')
-                    && content.ends_with(' ')
-                    && !content.chars().all(|x| x == ' ')
-                {
-                    content = content[1..content.len() - 1].to_string();
-                }
-                return Some((content, j + n));
-            }
-            j += m;
-        } else {
-            j += 1;
-        }
-    }
-    None
 }
 
 /// `{#id .class name="value"}` (§6): None for anything else, a bare word

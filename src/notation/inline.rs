@@ -5,7 +5,8 @@
 //! The same functions answer the writer's question of W2 — "does the reader
 //! see a construct here?" — so that reader and writer cannot drift apart.
 
-use super::syntax::{self, Selector};
+use super::scan::Scan;
+use super::syntax::{self, Selector, Shape};
 use crate::diag::{Code, Diagnostic};
 use crate::dom::{Attr, Comment, Element, Node, Text};
 use crate::profile::{Kind, Profile};
@@ -20,6 +21,16 @@ pub(crate) struct Inline<'p> {
     src: std::rc::Rc<str>,
     bytes: Vec<usize>,
     last_end_tag: std::collections::HashMap<String, Option<usize>>,
+    /// The closer searches over the text, and the ends of typed HTML
+    /// fragments per tag name and end of range, by byte offset.
+    scan: Scan,
+    fragments:
+        std::collections::HashMap<(String, usize), std::collections::HashMap<usize, Option<usize>>>,
+    /// Elements open around what is being read. From `html::MAX_DEPTH` on
+    /// no construct is taken: it stays text.
+    depth: usize,
+    /// Whether nesting beyond the cap has been reported.
+    pub too_deep: bool,
 }
 
 pub(crate) fn element(name: &str, attrs: Vec<Attr>, children: Vec<Node>) -> Node {
@@ -84,6 +95,15 @@ fn markers(ch: char) -> &'static [(&'static str, &'static str)] {
     }
 }
 
+/// Whether the marker `m` at `j` could close one (§5.5.2).
+pub(crate) fn closes_at(c: &[char], m: &str, j: usize, end: usize) -> bool {
+    let n = m.chars().count();
+    let intraword = !matches!(m, "^" | "~");
+    starts(c, j, end, m)
+        && !is_space(c[j - 1])
+        && !(intraword && c.get(j + n).is_some_and(|x| x.is_alphanumeric()))
+}
+
 fn starts(c: &[char], i: usize, end: usize, m: &str) -> bool {
     let n = m.chars().count();
     i + n <= end && c[i..i + n].iter().copied().eq(m.chars())
@@ -95,13 +115,30 @@ fn is_space(ch: char) -> bool {
 
 impl<'p> Inline<'p> {
     pub(crate) fn new(profile: &'p Profile) -> Self {
+        Self::within(profile, 0, false)
+    }
+
+    /// A reader for the content of an element open at `depth`.
+    pub(crate) fn within(profile: &'p Profile, depth: usize, too_deep: bool) -> Self {
         Inline {
             profile,
             diags: Vec::new(),
             src: "".into(),
             bytes: Vec::new(),
             last_end_tag: std::collections::HashMap::new(),
+            scan: Scan::new(&[]),
+            fragments: std::collections::HashMap::new(),
+            depth,
+            too_deep,
         }
+    }
+
+    /// Reads the content of an element that opens inside the current one.
+    fn inside(&mut self, c: &[char], start: usize, end: usize) -> Vec<Node> {
+        self.depth += 1;
+        let out = self.range(c, start, end);
+        self.depth -= 1;
+        out
     }
 
     pub(crate) fn read(&mut self, s: &str) -> Vec<Node> {
@@ -113,6 +150,8 @@ impl<'p> Inline<'p> {
             .chain(std::iter::once(s.len()))
             .collect();
         self.last_end_tag.clear();
+        self.scan = Scan::new(&c);
+        self.fragments.clear();
         self.range(&c, 0, c.len())
     }
 
@@ -129,7 +168,7 @@ impl<'p> Inline<'p> {
         last.is_some_and(|l| l >= from)
     }
 
-    pub(crate) fn range(&mut self, c: &[char], start: usize, end: usize) -> Vec<Node> {
+    fn range(&mut self, c: &[char], start: usize, end: usize) -> Vec<Node> {
         let mut out: Vec<Node> = Vec::new();
         let mut buf = String::new();
         let flush = |buf: &mut String, out: &mut Vec<Node>| {
@@ -148,6 +187,16 @@ impl<'p> Inline<'p> {
             if ch == '\n' {
                 flush(&mut buf, &mut out);
                 out.push(element("br", Vec::new(), Vec::new()));
+                i += 1;
+                continue;
+            }
+            if self.depth >= html::MAX_DEPTH {
+                if !self.too_deep && construct_at(self.profile, &mut self.scan, c, i, end).is_some()
+                {
+                    self.too_deep = true;
+                    self.diags.push(html::too_deep());
+                }
+                buf.push(ch);
                 i += 1;
                 continue;
             }
@@ -179,7 +228,7 @@ impl<'p> Inline<'p> {
     fn construct(&mut self, c: &[char], i: usize, end: usize) -> Option<(Option<Node>, usize)> {
         match c[i] {
             '`' => {
-                let (content, next) = syntax::code_span(c, i, end)?;
+                let (content, next) = self.scan.code_span(c, i, end)?;
                 Some((Some(element("code", Vec::new(), vec![text(content)])), next))
             }
             '[' => self.link(c, i, end).map(|(n, next)| (Some(n), next)),
@@ -192,16 +241,16 @@ impl<'p> Inline<'p> {
 
     /// §5.5.2: tries the markers at `i`, longest first.
     fn marker(&mut self, c: &[char], i: usize, end: usize) -> Option<(Node, usize)> {
-        let (m, name, close) = find_marker(c, i, end)?;
+        let (m, name, close) = find_marker(&mut self.scan, c, i, end)?;
         let n = m.chars().count();
-        let children = self.range(c, i + n, close);
+        let children = self.inside(c, i + n, close);
         Some((element(name, Vec::new(), children), close + n))
     }
 
     /// §5.5.4: `[text](path)`.
     fn link(&mut self, c: &[char], i: usize, end: usize) -> Option<(Node, usize)> {
-        let (close, path, next) = find_link(c, i, end)?;
-        let children = self.range(c, i + 1, close);
+        let (close, path, next) = find_link(&mut self.scan, c, i, end)?;
+        let children = self.inside(c, i + 1, close);
         let href = url::canonical(&path);
         Some((
             element(
@@ -218,10 +267,11 @@ impl<'p> Inline<'p> {
 
     /// §5.5.1: `.element#id.class[attr="value"](content)`, for inline elements.
     fn long_form(&mut self, c: &[char], i: usize, end: usize) -> Option<(Node, usize)> {
-        let sel = long_form_selector(self.profile, c, i, end)?;
+        let shape = long_form_shape(self.profile, &mut self.scan, c, i, end)?;
+        let sel = syntax::build(c, &shape);
         let (name, attrs) = from_selector(&sel);
         let children = match sel.content {
-            Some((a, b)) => self.range(c, a, b),
+            Some((a, b)) => self.inside(c, a, b),
             None => Vec::new(),
         };
         Some((element(&name, attrs, children), sel.end))
@@ -269,7 +319,8 @@ impl<'p> Inline<'p> {
         let taken = if next == '/' || !closable {
             None
         } else {
-            html::fragment_len(rest).map(|len| {
+            let ends = self.fragments.entry((name.clone(), b)).or_default();
+            html::fragment_len_in(rest, a, ends).map(|len| {
                 let fragment = &rest[..len];
                 let nodes = html::parse(fragment);
                 (fragment.chars().count(), nodes)
@@ -322,27 +373,30 @@ fn tag_len(s: &str) -> Option<usize> {
 
 /// A long form at `i` naming an inline element of the profile, with a
 /// bracket (§5.5.1). A void element takes no content.
-pub(crate) fn long_form_selector(
+pub(crate) fn long_form_shape(
     profile: &Profile,
+    scan: &mut Scan,
     c: &[char],
     i: usize,
     end: usize,
-) -> Option<Selector> {
-    let sel = syntax::selector(c, i, end)?;
-    if profile.kind(&sel.name) != Some(Kind::Inline) {
+) -> Option<Shape> {
+    let shape = syntax::shape(scan, c, i, end)?;
+    let name = shape.name(c);
+    if profile.kind(&name) != Some(Kind::Inline) {
         return None;
     }
-    if !sel.has_attr_bracket && sel.content.is_none() {
+    if !shape.has_attr_bracket() && shape.content.is_none() {
         return None;
     }
-    if is_void(&sel.name) && sel.content.is_some_and(|(a, b)| a != b) {
+    if is_void(&name) && shape.content.is_some_and(|(a, b)| a != b) {
         return None;
     }
-    Some(sel)
+    Some(shape)
 }
 
 /// The marker that opens at `i` and the index where it closes (§5.5.2).
 pub(crate) fn find_marker(
+    scan: &mut Scan,
     c: &[char],
     i: usize,
     end: usize,
@@ -362,104 +416,72 @@ pub(crate) fn find_marker(
         if intraword && i > 0 && c[i - 1].is_alphanumeric() {
             continue;
         }
-        let mut j = i + n;
-        while j < end {
-            if c[j] == '\\' && j + 1 < end && c[j + 1].is_ascii_punctuation() {
-                j += 2;
-                continue;
-            }
-            if c[j] == '`'
-                && let Some((_, next)) = syntax::code_span(c, j, end)
-            {
-                j = next;
-                continue;
-            }
-            if starts(c, j, end, m)
-                && !is_space(c[j - 1])
-                && !(intraword && c.get(j + n).is_some_and(|x| x.is_alphanumeric()))
-            {
-                let content = &c[i + n..j];
-                let ok =
-                    !content.is_empty() && (intraword || !content.iter().any(|&x| is_space(x)));
-                if ok {
-                    return Some((m, name, j));
-                }
-            }
-            j += 1;
+        // A closer right at the start would leave the content empty.
+        let from = i + n;
+        let skip = usize::from(closes_at(c, m, from, end));
+        let close = scan.marker_close(c, m, from + skip, end);
+        let Some(j) = close else {
+            continue;
+        };
+        if intraword || !scan.space_in(from, j) {
+            return Some((m, name, j));
         }
     }
     None
 }
 
-/// A link at `c[i] == '['`: the index of `]`, the path, the index after.
-pub(crate) fn find_link(c: &[char], i: usize, end: usize) -> Option<(usize, String, usize)> {
-    let mut depth = 0usize;
-    let mut j = i + 1;
-    let close = loop {
-        if j >= end {
-            return None;
-        }
-        if let Some(next) = syntax::skip_comment(c, j, end) {
-            j = next;
-            continue;
-        }
-        match c[j] {
-            '\\' if j + 1 < end && c[j + 1].is_ascii_punctuation() => j += 1,
-            '`' => {
-                if let Some((_, next)) = syntax::code_span(c, j, end) {
-                    j = next;
-                    continue;
-                }
-            }
-            '[' => depth += 1,
-            ']' if depth == 0 => break j,
-            ']' => depth -= 1,
-            '\n' => return None,
-            _ => {}
-        }
-        j += 1;
-    };
+/// A link at `c[i] == '['`: the index of `]`, of the path's first character
+/// and of the `)` after it.
+fn link_bounds(scan: &mut Scan, c: &[char], i: usize, end: usize) -> Option<(usize, usize, usize)> {
+    let close = scan.bracket_close(c, i, end)?;
     if c.get(close + 1) != Some(&'(') {
         return None;
     }
+    let from = close + 2;
+    Some((close, from, scan.path_close(c, from, end)?))
+}
+
+/// A link at `c[i] == '['`: the index of `]`, the path, the index after.
+pub(crate) fn find_link(
+    scan: &mut Scan,
+    c: &[char],
+    i: usize,
+    end: usize,
+) -> Option<(usize, String, usize)> {
+    let (close, from, to) = link_bounds(scan, c, i, end)?;
     let mut path = String::new();
-    let mut depth = 0usize;
-    let mut k = close + 2;
-    loop {
-        if k >= end {
-            return None;
+    let mut k = from;
+    while k < to {
+        if c[k] == '\\' && k + 1 < end && matches!(c[k + 1], ')' | '\\') {
+            path.push(c[k + 1]);
+            k += 2;
+        } else {
+            path.push(c[k]);
+            k += 1;
         }
-        match c[k] {
-            '\\' if matches!(c.get(k + 1), Some(')' | '\\')) && k + 1 < end => {
-                path.push(c[k + 1]);
-                k += 2;
-                continue;
-            }
-            '\n' => return None,
-            '(' => depth += 1,
-            ')' if depth == 0 => break,
-            ')' => depth -= 1,
-            _ => {}
-        }
-        path.push(c[k]);
-        k += 1;
     }
-    Some((close, path, k + 1))
+    Some((close, path, to + 1))
 }
 
 /// W2: if the reader would begin a construct at `i`, the index of the
 /// character to put a backslash before.
-pub(crate) fn construct_at(profile: &Profile, c: &[char], i: usize, end: usize) -> Option<usize> {
+pub(crate) fn construct_at(
+    profile: &Profile,
+    scan: &mut Scan,
+    c: &[char],
+    i: usize,
+    end: usize,
+) -> Option<usize> {
     match c[i] {
         '\\' if i + 1 < end && c[i + 1].is_ascii_punctuation() => Some(i),
-        '`' => syntax::code_span(c, i, end).map(|_| i),
-        '[' => find_link(c, i, end).map(|_| i),
-        '.' => long_form_selector(profile, c, i, end).map(|_| i),
+        '`' => scan.code_span_end(i, end).map(|_| i),
+        '[' => link_bounds(scan, c, i, end).map(|_| i),
+        '.' => long_form_shape(profile, scan, c, i, end).map(|_| i),
         '<' => c
             .get(i + 1)
             .filter(|&&x| x.is_ascii_alphabetic() || x == '/' || x == '!')
             .map(|_| i),
-        '*' | '_' | '=' | '~' | '^' => find_marker(c, i, end).map(|_| i),
+        '*' | '_' | '=' | '~' | '^' => find_marker(scan, c, i, end).map(|_| i),
         _ => None,
     }
 }

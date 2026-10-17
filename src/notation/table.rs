@@ -119,7 +119,7 @@ pub(crate) fn grid(
                     None if text == "=" => (true, ""),
                     None => (row < header_rows, text.as_str()),
                 };
-                let children = r_phrasing(r, content);
+                let children = r.phrasing(content);
                 cells.push(Cell {
                     row,
                     col,
@@ -135,13 +135,6 @@ pub(crate) fn grid(
         owner.push(here);
     }
     (assemble(r, cells, rows.len(), header_rows, caption), j)
-}
-
-fn r_phrasing(r: &mut Reader, s: &str) -> Vec<Node> {
-    let mut inline = super::inline::Inline::new(r.profile);
-    let nodes = super::inline::unwrap_fragments(inline.read(s));
-    r.diags.append(&mut inline.diags);
-    nodes
 }
 
 /// The cell-per-line form at `lines[i]` (`|=== n` … `|===`).
@@ -215,9 +208,9 @@ pub(crate) fn cells(
             (false, r.blocks(&body, false))
         } else {
             match content.strip_prefix("= ") {
-                Some(rest) => (true, r_phrasing(r, rest)),
+                Some(rest) => (true, r.phrasing(rest)),
                 None if content == "=" => (true, Vec::new()),
-                None => (false, r_phrasing(r, &content)),
+                None => (false, r.phrasing(&content)),
             }
         };
         cells.push(Cell {
@@ -315,7 +308,7 @@ fn assemble(
         parts.push(element(
             "caption",
             Vec::new(),
-            r_phrasing(r, caption.trim_matches(SP)),
+            r.phrasing(caption.trim_matches(SP)),
         ));
     }
     let rows: Vec<Node> = by_row
