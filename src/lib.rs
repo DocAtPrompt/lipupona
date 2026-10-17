@@ -1,13 +1,15 @@
 //! lipupona — reader, writer and canonicaliser for profiled HTML.
 //!
 //! The specification is `SPEC.md`, the test suite lives under `tests/`.
-//! Implemented so far: canonical serialization (§4) with the profile check
-//! (§3). The notation reader and writer (§5, §6) follow.
+//! Three conversions, each from text to text with diagnostics: [`canon`]
+//! (§4, with the profile check of §3), [`html`] (reading notation, §5, §6)
+//! and [`display`] (writing it, §5).
 
 pub mod canon;
 pub mod diag;
 pub mod dom;
 pub mod html;
+pub mod notation;
 pub mod profile;
 mod url;
 
@@ -28,4 +30,16 @@ pub const IMPLEMENTATION: &str = "lipupona";
 /// (`canon` of the specification). The result ends with one line feed.
 pub fn canon(html: &str) -> Output {
     canon::canon(html, &Profile::reference(IMPLEMENTATION))
+}
+
+/// Reads notation under the reference profile and returns canonical HTML
+/// (`html` of the specification). The result ends with one line feed.
+pub fn html(notation: &str) -> Output {
+    notation::html(notation, &Profile::reference(IMPLEMENTATION))
+}
+
+/// The display of HTML under the reference profile: its one canonical
+/// notation. The result ends with one line feed.
+pub fn display(html: &str) -> Output {
+    notation::display(html, &Profile::reference(IMPLEMENTATION))
 }

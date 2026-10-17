@@ -2,8 +2,7 @@
 //! (format: `tests/README.md`).
 //!
 //! `cargo test --test suite` runs every case. `LIPUPONA_CASES=tables/` runs
-//! the cases whose path begins with the given prefix. Kinds whose
-//! conversions are not implemented yet are counted as pending, not failed.
+//! the cases whose path begins with the given prefix.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -29,7 +28,7 @@ fn main() -> ExitCode {
         }
     }
 
-    let mut tally: BTreeMap<String, [usize; 3]> = BTreeMap::new();
+    let mut tally: BTreeMap<String, [usize; 2]> = BTreeMap::new();
     let mut failures = Vec::new();
     for dir in &cases {
         let name = dir
@@ -42,11 +41,7 @@ fn main() -> ExitCode {
         }
         let area = name.split('/').next().unwrap().to_string();
         let result = Case::load(dir).and_then(|c| c.run(&profile));
-        let slot = match &result {
-            Ok(Verdict::Pass) => 0,
-            Ok(Verdict::Pending) => 2,
-            Err(_) => 1,
-        };
+        let slot = if result.is_ok() { 0 } else { 1 };
         tally.entry(area).or_default()[slot] += 1;
         if let Err(why) = result {
             failures.push((name, why));
@@ -56,31 +51,20 @@ fn main() -> ExitCode {
     for (name, why) in &failures {
         println!("FAIL {name}\n{}\n", indent(why));
     }
-    println!(
-        "{:<14} {:>5} {:>5} {:>7}",
-        "area", "pass", "fail", "pending"
-    );
-    let mut total = [0; 3];
+    println!("{:<14} {:>5} {:>5}", "area", "pass", "fail");
+    let mut total = [0; 2];
     for (area, t) in &tally {
-        println!("{area:<14} {:>5} {:>5} {:>7}", t[0], t[1], t[2]);
-        for i in 0..3 {
+        println!("{area:<14} {:>5} {:>5}", t[0], t[1]);
+        for i in 0..2 {
             total[i] += t[i];
         }
     }
-    println!(
-        "{:<14} {:>5} {:>5} {:>7}",
-        "total", total[0], total[1], total[2]
-    );
+    println!("{:<14} {:>5} {:>5}", "total", total[0], total[1]);
     if failures.is_empty() {
         ExitCode::SUCCESS
     } else {
         ExitCode::FAILURE
     }
-}
-
-enum Verdict {
-    Pass,
-    Pending,
 }
 
 struct Case {
@@ -139,7 +123,7 @@ impl Case {
         Ok(codes)
     }
 
-    fn run(&self, profile: &Profile) -> Result<Verdict, String> {
+    fn run(&self, profile: &Profile) -> Result<(), String> {
         match self.kind.as_str() {
             "canonical" => {
                 let input = self.file("input.html")?;
@@ -152,21 +136,52 @@ impl Case {
                     &canon(&expected, profile).text,
                 )?;
                 self.same_diagnostics(&out)?;
-                Ok(Verdict::Pass)
+                Ok(())
             }
             "passthrough" => {
                 let input = self.file("input.html")?;
                 let out = canon(&input, profile);
                 same("canon(input.html)", &input, &out.text)?;
                 self.same_diagnostics(&out)?;
-                Ok(Verdict::Pass)
+                Ok(())
             }
             "diagnostic" if self.dir.join("input.html").exists() => {
                 let out = canon(&self.file("input.html")?, profile);
                 self.same_diagnostics(&out)?;
-                Ok(Verdict::Pass)
+                Ok(())
             }
-            "roundtrip" | "tolerance" | "diagnostic" => Ok(Verdict::Pending),
+            "roundtrip" => {
+                let expected = self.file("expected.html")?;
+                let display_txt = self.file("display.txt")?;
+                same(
+                    "display(expected.html)",
+                    &display_txt,
+                    &display(&expected, profile).text,
+                )?;
+                let out = html(&display_txt, profile);
+                same("html(display.txt)", &expected, &out.text)?;
+                self.same_diagnostics(&out)?;
+                Ok(())
+            }
+            "tolerance" => {
+                let input = self.file("input.txt")?;
+                let expected = self.file("expected.html")?;
+                let display_txt = self.file("display.txt")?;
+                let out = html(&input, profile);
+                same("html(input.txt)", &expected, &out.text)?;
+                same(
+                    "display(expected.html)",
+                    &display_txt,
+                    &display(&expected, profile).text,
+                )?;
+                self.same_diagnostics(&out)?;
+                Ok(())
+            }
+            "diagnostic" => {
+                let out = html(&self.file("input.txt")?, profile);
+                self.same_diagnostics(&out)?;
+                Ok(())
+            }
             other => Err(format!("unknown kind {other}")),
         }
     }
@@ -190,6 +205,23 @@ impl Case {
 /// line feed of C2.
 fn canon(input: &str, profile: &Profile) -> Output {
     let mut out = lipupona::canon::canon(input, profile);
+    if out.text.ends_with('\n') {
+        out.text.pop();
+    }
+    out
+}
+
+/// `html` and `display` as the test suite sees them: without the final line
+/// feed.
+fn html(input: &str, profile: &Profile) -> Output {
+    trimmed(lipupona::notation::html(input, profile))
+}
+
+fn display(input: &str, profile: &Profile) -> Output {
+    trimmed(lipupona::notation::display(input, profile))
+}
+
+fn trimmed(mut out: Output) -> Output {
     if out.text.ends_with('\n') {
         out.text.pop();
     }

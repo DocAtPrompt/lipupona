@@ -635,6 +635,45 @@ impl<'a> Parser<'a> {
     }
 }
 
+/// The length in bytes of an HTML fragment typed into notation (SPEC §6):
+/// `s` begins with a start tag, and the fragment runs to its matching end
+/// tag, or is the tag alone for a void element. None when the fragment is
+/// not closed.
+pub(crate) fn fragment_len(s: &str) -> Option<usize> {
+    let tag = scan_tag(s, 1)?;
+    if VOID.contains(&tag.name.as_str()) || tag.self_closing {
+        return Some(tag.len);
+    }
+    let b = s.as_bytes();
+    let mut depth = 1;
+    let mut i = tag.len;
+    while let Some(off) = s[i..].find('<') {
+        let at = i + off;
+        let end_tag = b.get(at + 1) == Some(&b'/');
+        let from = if end_tag { 2 } else { 1 };
+        let named = b[at + from..]
+            .get(..tag.name.len())
+            .is_some_and(|n| n.eq_ignore_ascii_case(tag.name.as_bytes()));
+        let after = b.get(at + from + tag.name.len()).copied();
+        let boundary = after.is_none_or(|c| is_space(c) || c == b'>' || c == b'/');
+        if named && boundary {
+            let inner = scan_tag(&s[at..], from)?;
+            if end_tag {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(at + inner.len);
+                }
+            } else {
+                depth += 1;
+            }
+            i = at + inner.len;
+        } else {
+            i = at + 1;
+        }
+    }
+    None
+}
+
 struct Tag {
     name: String,
     attrs: Vec<Attr>,

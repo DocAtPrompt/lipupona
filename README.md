@@ -91,9 +91,11 @@ Version 0.1.0, a draft for review.
   html2lipupona
 - [`docs/ports.md`](docs/ports.md) — plan for bindings and ports, and the
   constraints on the core that keep them possible
-- `src/` — the reference implementation in Rust: canonical serialization
-  and the profile check work and pass their test cases; the notation reader
-  and writer are next. `cargo test` runs the suite.
+- `src/` — the reference implementation in Rust: `canon`, `html` (reading
+  notation) and `display` (writing it). It passes the whole suite; property
+  tests check L1, L2 and L4 on generated documents. `cargo test` runs
+  everything; `cargo run --example display -- page.html` shows a page's
+  notation.
 
 The first application is konsona, which stores its pages as HTML files.
 

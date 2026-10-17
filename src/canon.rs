@@ -10,15 +10,22 @@ use crate::{Output, html, url};
 /// Reads HTML and writes it canonically. Blocks outside the profile and
 /// islands come back as they were stored, with LF line ends (C2).
 pub fn canon(input: &str, profile: &Profile) -> Output {
+    let (nodes, diagnostics) = read(input, profile);
+    Output {
+        text: serialize(&nodes, profile),
+        diagnostics,
+    }
+}
+
+/// Reads HTML into a checked, normalised tree: what is outside the profile
+/// has become verbatim source.
+pub fn read(input: &str, profile: &Profile) -> (Vec<Node>, Vec<Diagnostic>) {
     let nodes = html::parse(input);
     let mut diagnostics = Vec::new();
     report_comments(&nodes, &mut diagnostics);
     let mut nodes = profile.check(input, nodes, &mut diagnostics);
     normalize(&mut nodes, profile);
-    Output {
-        text: serialize(&nodes, profile),
-        diagnostics,
-    }
+    (nodes, diagnostics)
 }
 
 fn report_comments(nodes: &[Node], out: &mut Vec<Diagnostic>) {
@@ -224,7 +231,19 @@ fn write_blocks(children: &[Node], level: usize, lines: &mut Vec<String>, profil
                     }
                     write_block(e, level, lines, profile);
                 }
-                Node::Verbatim(v) => lines.push(format!("{indent}{}", v.text)),
+                Node::Verbatim(v) => {
+                    // A heading passed through is a heading too (C9).
+                    let b = v.text.as_bytes();
+                    let heading = b.len() > 3
+                        && b[0] == b'<'
+                        && b[1].eq_ignore_ascii_case(&b'h')
+                        && (b'1'..=b'6').contains(&b[2])
+                        && (b[3] == b'>' || b[3].is_ascii_whitespace());
+                    if heading && !first {
+                        lines.push(String::new());
+                    }
+                    lines.push(format!("{indent}{}", v.text));
+                }
                 _ => {}
             }
             first = false;

@@ -201,6 +201,28 @@ impl Profile {
         out
     }
 
+    /// Reports what breaks the profile in a tree that was built rather than
+    /// read from stored bytes — from notation, or from typed HTML. Nothing is
+    /// replaced. `phrasing` checks the nodes as the content of a paragraph.
+    pub(crate) fn diagnose(&self, nodes: &[Node], phrasing: bool) -> Vec<Diagnostic> {
+        let ctx = Ctx {
+            parent: if phrasing { "p" } else { "body" },
+            model: if phrasing {
+                Model::Phrasing
+            } else {
+                Model::Blocks
+            },
+            container_depth: 0,
+            list_depth: 0,
+            in_structure: false,
+        };
+        let mut out = Vec::new();
+        for node in nodes {
+            self.check_node("", node.clone(), &ctx, &mut out);
+        }
+        out
+    }
+
     /// Text and inline elements directly in `body` break the constraint that
     /// `body` holds blocks. A run of them is passed through as one piece, from
     /// its first to its last non-blank node.
