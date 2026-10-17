@@ -104,5 +104,5 @@ words of toki pona.
 
 ## License
 
-Specification text, documentation and logo: CC BY 4.0. Test suite: MIT. See
-[`LICENSE`](LICENSE).
+Specification text, documentation and logo: CC BY 4.0. Test suite: MIT.
+Code: MIT or Apache-2.0, at your option. See [`LICENSE`](LICENSE).
