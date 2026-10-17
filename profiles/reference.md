@@ -53,6 +53,7 @@ declares per use.
 | List depth | 3 |
 | Deepest heading | `h4` |
 | Pipe grid columns | 6 |
+| Nesting depth | 256 elements, as in every profile (SPEC §3.4) |
 
 ## Attributes
 

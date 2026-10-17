@@ -319,7 +319,10 @@ impl Profile {
             });
         }
         if el.name == html::TOO_DEEP {
-            out.push(html::too_deep());
+            // Once per block (§3.4).
+            if !out.contains(&html::too_deep()) {
+                out.push(html::too_deep());
+            }
             return Node::Element(el);
         }
         let Some((kind, model)) = self.element(&el.name) else {

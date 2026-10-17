@@ -29,7 +29,7 @@ pub(crate) struct Inline<'p> {
     /// Elements open around what is being read. From `html::MAX_DEPTH` on
     /// no construct is taken: it stays text.
     depth: usize,
-    /// Whether nesting beyond the cap has been reported.
+    /// Whether a construct would have opened beyond the cap (SPEC §3.4).
     pub too_deep: bool,
 }
 
@@ -194,7 +194,6 @@ impl<'p> Inline<'p> {
                 if !self.too_deep && construct_at(self.profile, &mut self.scan, c, i, end).is_some()
                 {
                     self.too_deep = true;
-                    self.diags.push(html::too_deep());
                 }
                 buf.push(ch);
                 i += 1;

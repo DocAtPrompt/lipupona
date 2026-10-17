@@ -194,6 +194,23 @@ against a constraint (text directly in a container, a `summary` that is not
 the first child, a callout in a list item), are `constraint-violated`; depth
 beyond a limit is `limit-exceeded`.
 
+**Nesting depth.** Besides the limits a profile declares, one limit is the
+same for every profile and every implementation, so that a document reads
+the same everywhere: no tree is deeper than **256 elements**. An element
+directly in `body` has depth 1, its children depth 2; void elements count.
+Unlike the limits of a profile, a tree beyond this one is not built:
+
+- Read from HTML, an element deeper than 256 is not built, and the top-level
+  block that holds it is passed through as stored (§3.3), its end tags
+  included.
+- Read from notation, a top-level block whose tree would be deeper than 256
+  stays text as a whole, like a typed block that is not taken (§6): its
+  lines are text lines, and nothing in them is notation.
+
+Either is reported once per block as `limit-exceeded`. A reader thus never
+needs to hold more than 256 levels, and no walk over a tree can exhaust a
+small stack.
+
 ### 3.5 Attributes in general
 
 `class` and `lang` SHOULD be allowed on every body element, `id` on every
@@ -332,7 +349,12 @@ Two rules make the display unique and keep L1:
   the escape in place, until the text reads back as the same tree. So
   `<p>1. Mai</p>` is written `1\. Mai` (a backslash before `1` would be
   literal), and `<p>**a** und **b**</p>` is written `\*\*a** und \*\*b**`:
-  after the first backslash the reader would still see `*a*`. Reader and
+  after the first backslash the reader would still see `*a*`. The question
+  is asked of all the text that follows, as far as the phrasing being
+  written reaches (the paragraph, the heading, the cell), not only as far as
+  the construct the character stands in: `<p><em>*a</em></p>` is written
+  `*\*a*`, because on that line the inner `*` would begin `*a*`, although
+  the reader reads `**a*` as `<em>*a</em>` too. Reader and
   writer SHOULD share one predicate for "the reader sees structure here", so
   that the two cannot drift apart.
 
@@ -1058,7 +1080,7 @@ Implementations report by stable codes. This version defines:
 | Code | Meaning |
 |---|---|
 | `out-of-profile` | element or attribute the profile does not know, passed through |
-| `limit-exceeded` | list depth, container depth or heading level beyond the profile |
+| `limit-exceeded` | list depth, container depth or heading level beyond the profile; nesting deeper than 256 elements (§3.4) |
 | `constraint-violated` | profile elements arranged against a constraint of §3.2 or §7.2 (a callout in a list item) |
 | `island-rejected` | an island breaks the whitelist of its profile; passed through |
 | `alignment-dropped` | colons in a separator line were accepted and dropped |

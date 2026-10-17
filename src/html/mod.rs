@@ -41,6 +41,7 @@ pub fn parse(input: &str) -> Vec<Node> {
         in_head: false,
         ignore_lf: false,
         too_deep: false,
+        skipped: Vec::new(),
     };
     p.run();
     let mut nodes = p.root;
@@ -264,6 +265,9 @@ struct Parser<'a> {
     ignore_lf: bool,
     /// The deepest open element holds a [`TOO_DEEP`] mark already.
     too_deep: bool,
+    /// Start tags beyond [`MAX_DEPTH`] that were not built, innermost last:
+    /// their end tags belong to them, not to the elements that are open.
+    skipped: Vec<String>,
 }
 
 impl<'a> Parser<'a> {
@@ -380,20 +384,21 @@ impl<'a> Parser<'a> {
             span: start..end,
             implied_end: false,
         };
-        if (foreign && tag.self_closing) || (!self.in_foreign() && VOID.contains(&name)) {
-            self.append(Node::Element(el));
+        let void = (foreign && tag.self_closing) || (!self.in_foreign() && VOID.contains(&name));
+        if self.stack.len() >= MAX_DEPTH {
+            self.mark_too_deep(start..end);
+            if void {
+                return;
+            }
+            self.skipped.push(tag.name.clone());
+            if RAW_TEXT.contains(&name) || RCDATA.contains(&name) {
+                let rest = &self.src[self.pos..];
+                self.pos += find_end_tag(rest, name).unwrap_or(rest.len());
+            }
             return;
         }
-        if self.stack.len() >= MAX_DEPTH {
-            if !std::mem::replace(&mut self.too_deep, true) {
-                self.append(Node::Element(Element {
-                    name: TOO_DEEP.into(),
-                    attrs: Vec::new(),
-                    children: Vec::new(),
-                    span: start..end,
-                    implied_end: false,
-                }));
-            }
+        if void {
+            self.append(Node::Element(el));
             return;
         }
         self.stack.push(el);
@@ -493,7 +498,25 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Marks that an element would be deeper than [`MAX_DEPTH`]: once for
+    /// each time the open elements reach the cap.
+    fn mark_too_deep(&mut self, span: std::ops::Range<usize>) {
+        if !std::mem::replace(&mut self.too_deep, true) {
+            self.append(Node::Element(Element {
+                name: TOO_DEEP.into(),
+                attrs: Vec::new(),
+                children: Vec::new(),
+                span,
+                implied_end: false,
+            }));
+        }
+    }
+
     fn implied(&mut self, name: &str, at: usize) {
+        if self.stack.len() >= MAX_DEPTH {
+            self.mark_too_deep(at..at);
+            return;
+        }
         self.stack.push(Element {
             name: name.to_string(),
             attrs: Vec::new(),
@@ -511,8 +534,16 @@ impl<'a> Parser<'a> {
             }
             return;
         }
+        if let Some(k) = self.skipped.iter().rposition(|n| n == name) {
+            self.skipped.truncate(k);
+            return;
+        }
+        let full = self.stack.len() >= MAX_DEPTH;
         match name {
             "html" | "body" | "head" => {}
+            "p" | "br" if full && (name == "br" || !self.in_scope("p", &["button"])) => {
+                self.mark_too_deep(start..end);
+            }
             "p" if !self.in_scope("p", &["button"]) => {
                 // `</p>` without an open p is an empty paragraph.
                 self.append(Node::Element(Element {
@@ -594,6 +625,7 @@ impl<'a> Parser<'a> {
             return;
         };
         self.too_deep = false;
+        self.skipped.clear();
         el.span.end = end.max(el.span.start);
         el.implied_end = implied;
         self.append(Node::Element(el));

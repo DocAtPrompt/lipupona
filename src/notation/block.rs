@@ -15,8 +15,55 @@ pub(crate) struct Reader<'p> {
     /// Elements open around what is being read. From `html::MAX_DEPTH` on
     /// nothing more is opened: what would open an element is text.
     depth: usize,
-    /// Whether nesting beyond the cap has been reported.
+    /// Whether the top-level block being read would be deeper than the cap
+    /// (SPEC §3.4).
     too_deep: bool,
+}
+
+/// The text lines of the paragraph being collected: as the inline reader
+/// reads them, and as they were typed.
+#[derive(Default)]
+struct Para {
+    lines: Vec<String>,
+    typed: Vec<String>,
+}
+
+impl Para {
+    fn push(&mut self, line: String) {
+        self.typed.push(line.clone());
+        self.lines.push(line);
+    }
+
+    /// A line of literal text: `line` reads as `typed`.
+    fn push_literal(&mut self, line: String, typed: String) {
+        self.lines.push(line);
+        self.typed.push(typed);
+    }
+
+    fn pop(&mut self) -> Option<(String, String)> {
+        Some((self.lines.pop()?, self.typed.pop()?))
+    }
+
+    fn is_empty(&self) -> bool {
+        self.lines.is_empty()
+    }
+
+    fn len(&self) -> usize {
+        self.lines.len()
+    }
+}
+
+/// The depth of the deepest element in `nodes`.
+fn tree_depth(nodes: &[Node]) -> usize {
+    nodes
+        .iter()
+        .map(|n| match n {
+            Node::Element(e) => 1 + tree_depth(&e.children),
+            Node::Verbatim(_) => 1,
+            _ => 0,
+        })
+        .max()
+        .unwrap_or(0)
 }
 
 /// The lines of one context as one text, made when a comment or typed HTML
@@ -63,10 +110,18 @@ impl Joined {
 enum Found {
     Comment(String, usize),
     Typed(Vec<Node>, usize, Option<String>),
-    /// A typed block that is closed but not taken (§6): its lines, as text
-    /// lines for the paragraph with nothing in them read as notation, then
-    /// what follows its end tag; and the diagnostic.
-    Literal(Vec<String>, Diagnostic),
+    /// A typed block that is closed but not taken (§6): its lines, as the
+    /// inline reader reads them (nothing in them is notation, then what
+    /// follows its end tag) and as typed; and the diagnostic.
+    Literal(Vec<(String, String)>, Diagnostic),
+}
+
+/// Lines `from..to` of a context without their indentation.
+fn input_lines(lines: &[String], from: usize, to: usize) -> Vec<String> {
+    lines[from..to.min(lines.len())]
+        .iter()
+        .map(|l| l.trim_start_matches(SP).to_string())
+        .collect()
 }
 
 /// Text that the inline reader reads as it is written: a backslash before
@@ -307,12 +362,11 @@ impl<'p> Reader<'p> {
     pub(crate) fn blocks(&mut self, input: &[String], figure: bool) -> Vec<Node> {
         let mut lines: Vec<String> = input.to_vec();
         let capped = self.depth >= html::MAX_DEPTH;
-        if capped && !self.too_deep && lines.iter().any(|l| !is_blank(l)) {
+        if capped && lines.iter().any(|l| !is_blank(l)) {
             self.too_deep = true;
-            self.diags.push(html::too_deep());
         }
         let mut out: Vec<Node> = Vec::new();
-        let mut para: Vec<String> = Vec::new();
+        let mut para = Para::default();
         let mut pending: Option<Vec<(String, String)>> = None;
         let mut joined: Option<Joined> = None;
         let mut i = 0;
@@ -359,11 +413,11 @@ impl<'p> Reader<'p> {
                 // Text lines, which a blank line inside divides (§5.2).
                 self.diags.push(diag);
                 i += text_lines.len();
-                for line in text_lines {
-                    if is_blank(&line) {
+                for (line, typed) in text_lines {
+                    if is_blank(&typed) {
                         self.flush(&mut para, &mut out, &mut pending);
                     } else {
-                        para.push(line);
+                        para.push_literal(line, typed);
                     }
                 }
                 continue;
@@ -384,12 +438,35 @@ impl<'p> Reader<'p> {
                 self.flush(&mut para, &mut out, &mut pending);
                 None
             };
+            let caption_typed = caption.as_ref().map(|(_, typed)| typed.clone());
+            let caption = caption.map(|(line, _)| line);
             let before = out.len();
             let line_before = i;
+            let top = self.depth == 0;
+            if top {
+                self.too_deep = false;
+            }
             i = match found {
                 Some(found) => self.take_found(found, &mut lines, i, &mut out),
                 None => self.take(op, &mut lines, i, &rest, caption, &mut out),
             };
+            // A top-level block that would be too deep stays text as a
+            // whole (§3.4): its lines, as typed, are text lines.
+            if top && (self.too_deep || tree_depth(&out[before..]) > html::MAX_DEPTH) {
+                out.truncate(before);
+                self.diags.push(html::too_deep());
+                let typed = caption_typed
+                    .into_iter()
+                    .chain(input_lines(&lines, line_before, i));
+                for line in typed {
+                    if is_blank(&line) {
+                        self.flush(&mut para, &mut out, &mut pending);
+                    } else {
+                        para.push_literal(literal(&line), line);
+                    }
+                }
+                continue;
+            }
             if let Some(attrs) = pending.take()
                 && let Some(Node::Element(e)) = out.get_mut(before)
             {
@@ -656,9 +733,13 @@ impl<'p> Reader<'p> {
         let nodes: Vec<Node> = nodes.into_iter().filter(|n| !n.is_blank_text()).collect();
         if blocked || nodes.iter().any(|n| matches!(n, Node::Text(_))) {
             // Not taken: literal text as a whole, to its end tag (§6).
-            let mut text_lines: Vec<String> = fragment.split('\n').map(literal).collect();
-            if let Some(last) = text_lines.last_mut() {
-                last.push_str(&remainder);
+            let mut text_lines: Vec<(String, String)> = fragment
+                .split('\n')
+                .map(|l| (literal(l), l.to_string()))
+                .collect();
+            if let Some((line, typed)) = text_lines.last_mut() {
+                line.push_str(&remainder);
+                typed.push_str(&remainder);
             }
             let first = fragment.split('\n').next().unwrap_or("");
             let diag = Diagnostic::new(Code::HtmlNotTaken, first.to_string());
@@ -671,15 +752,25 @@ impl<'p> Reader<'p> {
 
     fn flush(
         &mut self,
-        para: &mut Vec<String>,
+        para: &mut Para,
         out: &mut Vec<Node>,
         pending: &mut Option<Vec<(String, String)>>,
     ) {
         if para.is_empty() {
             return;
         }
-        let mut p = self.paragraph(para);
-        para.clear();
+        let para = std::mem::take(para);
+        let top = self.depth == 0;
+        if top {
+            self.too_deep = false;
+        }
+        let mut p = self.paragraph(&para.lines);
+        // A top-level paragraph that would be too deep stays text (§3.4).
+        if top && (self.too_deep || tree_depth(std::slice::from_ref(&p)) > html::MAX_DEPTH) {
+            self.diags.push(html::too_deep());
+            let lines: Vec<String> = para.typed.iter().map(|l| literal(l)).collect();
+            p = self.paragraph(&lines);
+        }
         if let (Some(attrs), Node::Element(e)) = (pending.take(), &mut p) {
             self.merge(e, attrs);
         }
