@@ -376,9 +376,10 @@ closing line, blank lines inside included; an element line by the indented
 lines below it, blank lines between them included.
 
 A fence or a fenced container that is never closed extends to the end of the
-unit. A typed HTML block that is never closed is not well-formed and stays
-text (§6); a comment that is never closed stays text and is reported
-(`unclosed-comment`) — neither may swallow what follows.
+unit. A typed HTML block that is never closed is not well-formed and its line
+is text (§6); a comment that is never closed stays text and is reported
+(`unclosed-comment`) — neither may swallow what follows. A typed HTML block
+that is closed but not taken stays text as a whole, to its end tag (§6).
 
 So `## Dosis⏎Täglich 100 mg.` is a heading and a paragraph, and
 
@@ -810,10 +811,17 @@ Details:
 - **Typed HTML.** A typed fragment is parsed as HTML as a whole: inside it,
   character references are decoded and notation does not apply (no markers,
   no backslash escapes). It is taken only if it is well-formed and consists of
-  profile elements and attributes; otherwise it stays literal text, with the
-  diagnostic `html-not-taken`. A block fragment begins with a start tag at
-  the start of a line and extends to its matching end tag, blank lines inside
-  included. The writer escapes every `<` in literal text that begins
+  profile elements and attributes; otherwise it stays literal text as a
+  whole, with one diagnostic `html-not-taken`: nothing in it is notation, no
+  reference in it is decoded, and its line ends are line breaks, as between
+  any two text lines. A block fragment begins with a start tag at the start
+  of a line and extends to its matching end tag, blank lines inside included.
+  One that is not taken is text lines (§5.2) from its first line to its last:
+  it continues a paragraph before it, a blank line inside it ends the
+  paragraph, and what follows its end tag on its last line is read on, as
+  notation, in the same paragraph. A start tag without its matching end tag
+  begins no fragment: the tag is literal text and reported, and what follows
+  it is read as usual. The writer escapes every `<` in literal text that begins
   something shaped like a tag — `<` followed by a letter, `/` or `!` —
   whether the reader would take it or not, so that reading the display back
   never reports `html-not-taken`: `<p>Ein &lt;blink> Tag</p>` is written

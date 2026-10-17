@@ -1,0 +1,2 @@
+Ein \<blink>Tag
+zwei\</blink> drei

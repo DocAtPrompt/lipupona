@@ -352,14 +352,24 @@ impl<'p> Inline<'p> {
                     Some((len, _)) => len,
                     None => tag_len(rest).unwrap_or(1),
                 };
-                self.diags.push(Diagnostic::new(
-                    Code::HtmlNotTaken,
-                    c[i..i + len].iter().collect::<String>(),
-                ));
-                Some((
-                    Some(text(c[i..i + len].iter().collect::<String>())),
-                    i + len,
-                ))
+                let literal: String = c[i..i + len].iter().collect();
+                self.diags
+                    .push(Diagnostic::new(Code::HtmlNotTaken, literal.clone()));
+                // Literal text, whose line ends are line breaks (§5.2).
+                let mut nodes = Vec::new();
+                for (k, line) in literal.split('\n').enumerate() {
+                    if k > 0 {
+                        nodes.push(element("br", Vec::new(), Vec::new()));
+                    }
+                    if !line.is_empty() {
+                        nodes.push(text(line));
+                    }
+                }
+                let node = match nodes.len() {
+                    1 => nodes.pop().unwrap_or_else(|| text("")),
+                    _ => element("#fragment", Vec::new(), nodes),
+                };
+                Some((Some(node), i + len))
             }
         }
     }

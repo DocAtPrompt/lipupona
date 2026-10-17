@@ -1,0 +1,3 @@
+kind = "tolerance"
+section = "6"
+note = "A typed HTML block that is not taken continues the paragraph before it, and what follows its end tag is notation."

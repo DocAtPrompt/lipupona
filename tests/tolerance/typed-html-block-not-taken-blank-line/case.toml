@@ -1,0 +1,3 @@
+kind = "tolerance"
+section = "6"
+note = "A blank line inside a typed HTML block that is not taken ends a paragraph of its literal text."

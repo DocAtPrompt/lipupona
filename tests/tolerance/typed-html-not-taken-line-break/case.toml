@@ -1,0 +1,3 @@
+kind = "tolerance"
+section = "6"
+note = "A line end inside typed HTML that is not taken is a line break."

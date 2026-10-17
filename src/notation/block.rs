@@ -63,6 +63,23 @@ impl Joined {
 enum Found {
     Comment(String, usize),
     Typed(Vec<Node>, usize, Option<String>),
+    /// A typed block that is closed but not taken (§6): its lines, as text
+    /// lines for the paragraph with nothing in them read as notation, then
+    /// what follows its end tag; and the diagnostic.
+    Literal(Vec<String>, Diagnostic),
+}
+
+/// Text that the inline reader reads as it is written: a backslash before
+/// every ASCII punctuation character (§5.12).
+fn literal(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() * 2);
+    for ch in s.chars() {
+        if ch.is_ascii_punctuation() {
+            out.push('\\');
+        }
+        out.push(ch);
+    }
+    out
 }
 
 /// What a line opens (§5.2), seen without its indentation.
@@ -338,6 +355,19 @@ impl<'p> Reader<'p> {
                 }
                 _ => None,
             };
+            if let Some(Found::Literal(text_lines, diag)) = found {
+                // Text lines, which a blank line inside divides (§5.2).
+                self.diags.push(diag);
+                i += text_lines.len();
+                for line in text_lines {
+                    if is_blank(&line) {
+                        self.flush(&mut para, &mut out, &mut pending);
+                    } else {
+                        para.push(line);
+                    }
+                }
+                continue;
+            }
             let taken = match &op {
                 Opener::Comment | Opener::TypedBlock => found.is_some(),
                 Opener::Container { spec, .. } => self.container(spec).is_some(),
@@ -445,6 +475,7 @@ impl<'p> Reader<'p> {
                 }));
                 i + used
             }
+            Found::Literal(..) => i,
             Found::Typed(nodes, used, remainder) => {
                 out.extend(nodes);
                 match remainder {
@@ -615,21 +646,25 @@ impl<'p> Reader<'p> {
         let ends = joined.ends.entry(name).or_default();
         let len = html::fragment_len_in(rest, from, ends)?;
         let fragment = &rest[..len];
+        let remainder = rest[len..].split('\n').next().unwrap_or("").to_string();
         let nodes = html::parse(fragment);
-        if self
+        let blocked = self
             .profile
             .diagnose(&nodes, false)
             .iter()
-            .any(|d| d.code.is_blocking())
-        {
-            return None;
-        }
+            .any(|d| d.code.is_blocking());
         let nodes: Vec<Node> = nodes.into_iter().filter(|n| !n.is_blank_text()).collect();
-        if nodes.iter().any(|n| matches!(n, Node::Text(_))) {
-            return None;
+        if blocked || nodes.iter().any(|n| matches!(n, Node::Text(_))) {
+            // Not taken: literal text as a whole, to its end tag (§6).
+            let mut text_lines: Vec<String> = fragment.split('\n').map(literal).collect();
+            if let Some(last) = text_lines.last_mut() {
+                last.push_str(&remainder);
+            }
+            let first = fragment.split('\n').next().unwrap_or("");
+            let diag = Diagnostic::new(Code::HtmlNotTaken, first.to_string());
+            return Some(Found::Literal(text_lines, diag));
         }
         let used = fragment.matches('\n').count();
-        let remainder = rest[len..].split('\n').next().unwrap_or("").to_string();
         let remainder = (!remainder.trim_matches(SP).is_empty()).then_some(remainder);
         Some(Found::Typed(nodes, used, remainder))
     }

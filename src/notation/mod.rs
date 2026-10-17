@@ -359,8 +359,9 @@ mod tests {
     }
 
     /// Many openers without a partner, in every construct whose closer is
-    /// searched for: each was quadratic once (seconds to minutes at this
-    /// size), and each reads back from its display.
+    /// searched for, and chains of typed blocks that are not taken: each was
+    /// quadratic once (seconds to minutes at this size), and each reads back
+    /// from its display.
     #[test]
     fn unclosed_openers_stay_linear() {
         let profile = Profile::reference("test");
@@ -379,6 +380,9 @@ mod tests {
             ticks,
             "<div>\n".repeat(n),
             "<!-- a\n".repeat(n),
+            format!("{}x\n{}", "<div>\n".repeat(n), "</div>\n".repeat(n)),
+            format!("{}<section>\n{}", "<p>\n".repeat(n), "</p>\n".repeat(n)),
+            format!("{}<section>\n{}", "<li>\n".repeat(n), "</li>\n".repeat(n)),
         ];
         for input in inputs {
             let head: String = input.chars().take(12).collect();
