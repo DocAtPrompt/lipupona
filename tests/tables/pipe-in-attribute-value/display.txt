@@ -1,0 +1,4 @@
+|=== 2
+| Befund
+| .img[alt="Eisen|Ferritin" src="bild.png"]
+|===

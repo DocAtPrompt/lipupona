@@ -3,7 +3,7 @@
 The test suite is the normative companion of `SPEC.md`. Where the two
 disagree, one of them has a bug — please open an issue.
 
-*Status: 342 cases; the reference implementation passes all of them.*
+*Status: 343 cases; the reference implementation passes all of them.*
 
 ## Layout
 

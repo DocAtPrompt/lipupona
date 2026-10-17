@@ -461,7 +461,7 @@ impl<'p> Writer<'p> {
                             .iter()
                             .all(|a| a.name == "colspan" || a.name == "rowspan")
                             && !c.el.children.iter().any(|n| self.profile.is_block(n))
-                            && !has_code_with_pipe(&c.el.children)
+                            && !has_unescapable_pipe(&c.el.children)
                     });
                 let mut lines = Vec::new();
                 if let Some(c) = g.caption {
@@ -914,13 +914,17 @@ fn link_path(href: &str) -> String {
     s
 }
 
-fn has_code_with_pipe(nodes: &[Node]) -> bool {
+/// A `|` that no backslash can take in a grid cell: in a code span or in an
+/// attribute value (SPEC §5.9).
+fn has_unescapable_pipe(nodes: &[Node]) -> bool {
     nodes.iter().any(|n| match n {
         Node::Element(e) if e.name == "code" => e
             .children
             .iter()
             .any(|c| matches!(c, Node::Text(t) if t.text.contains('|'))),
-        Node::Element(e) => has_code_with_pipe(&e.children),
+        Node::Element(e) => {
+            e.attrs.iter().any(|a| a.value.contains('|')) || has_unescapable_pipe(&e.children)
+        }
         _ => false,
     })
 }

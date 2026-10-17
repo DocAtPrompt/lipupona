@@ -644,7 +644,8 @@ See §7.3.
 Two forms are valid input. The writer chooses by a property of the HTML, not
 by the history of the file: the **pipe grid** when every cell is phrasing, no
 cell carries an attribute besides the spans the grid expresses, no cell holds
-a code span containing `|`, the table has at most the profile's maximum
+a `|` that no backslash can take — in a code span or in an attribute value —
+the table has at most the profile's maximum
 column count (reference profile: six), and the header rows contain only `th`;
 otherwise the **cell-per-line form**.
 
