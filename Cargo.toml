@@ -11,3 +11,9 @@ keywords = ["html", "markdown", "notation", "markup", "canonicalization"]
 categories = ["parser-implementations", "text-processing"]
 
 [dependencies]
+unicode-normalization = "0.1.25"
+unicode-segmentation = "1.13"
+
+[[test]]
+name = "suite"
+harness = false
