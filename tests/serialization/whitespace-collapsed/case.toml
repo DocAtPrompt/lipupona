@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "C7: runs of whitespace collapse to one space and are removed at the start and end of a block."

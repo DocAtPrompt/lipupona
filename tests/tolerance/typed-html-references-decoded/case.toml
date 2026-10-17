@@ -1,0 +1,3 @@
+kind = "tolerance"
+section = "6"
+note = "Inside typed HTML character references are decoded."

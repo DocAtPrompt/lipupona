@@ -1,0 +1,3 @@
+kind = "passthrough"
+section = "A"
+note = "start is allowed on ol only."

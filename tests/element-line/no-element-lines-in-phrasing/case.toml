@@ -1,0 +1,3 @@
+kind = "roundtrip"
+section = "5.4.2"
+note = "An indented .span line under a phrasing element is the inline long form."

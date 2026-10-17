@@ -1,0 +1,3 @@
+kind = "roundtrip"
+section = "5.5.2"
+note = "* followed by a letter cannot close; with no other closer the text stays text."

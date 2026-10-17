@@ -1,0 +1,3 @@
+kind = "roundtrip"
+section = "7.4"
+note = "A core type in an aside does not match its weight: element line and diagnostic."

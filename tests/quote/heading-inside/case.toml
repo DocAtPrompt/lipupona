@@ -1,0 +1,3 @@
+kind = "roundtrip"
+section = "5.7"
+note = "A heading as first child of a quote; the writer separates blocks with >."

@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "C7: whitespace between two inline elements collapses to one space but is kept."

@@ -1,0 +1,1 @@
+Drücke .kbd(Strg) und .kbd(C).

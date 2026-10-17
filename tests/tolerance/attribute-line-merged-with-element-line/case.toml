@@ -1,0 +1,3 @@
+kind = "tolerance"
+section = "6"
+note = "Attributes from braces and an element line on the same block are merged."

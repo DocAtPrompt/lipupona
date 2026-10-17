@@ -1,0 +1,3 @@
+kind = "passthrough"
+section = "3.3"
+note = "script is not an element of the reference profile."

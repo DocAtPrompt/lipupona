@@ -1,0 +1,3 @@
+kind = "tolerance"
+section = "6"
+note = "::: name with a space is accepted."

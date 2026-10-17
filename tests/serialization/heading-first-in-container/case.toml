@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "C9: a heading that is the first child of a container gets no blank line."

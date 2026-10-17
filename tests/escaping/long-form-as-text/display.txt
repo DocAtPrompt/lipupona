@@ -1,0 +1,1 @@
+Schreib \.kbd(Strg) für eine Taste.

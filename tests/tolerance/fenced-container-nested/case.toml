@@ -1,0 +1,3 @@
+kind = "tolerance"
+section = "6"
+note = "The outer fence is longer than the inner one."

@@ -1,0 +1,3 @@
+kind = "tolerance"
+section = "6"
+note = "The type is read in any case and displayed in lower case."

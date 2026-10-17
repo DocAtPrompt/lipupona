@@ -1,0 +1,3 @@
+kind = "passthrough"
+section = "A"
+note = "id is allowed on blocks only."

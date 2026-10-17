@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "C12: a single letter before : is not a scheme; the value is encoded."

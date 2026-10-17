@@ -1,0 +1,3 @@
+kind = "roundtrip"
+section = "5.5.2"
+note = "* after a digit cannot open; the text stays text."

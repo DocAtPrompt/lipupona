@@ -1,0 +1,2 @@
+.aside.callout.warning
+  Nicht mit Tee einnehmen.

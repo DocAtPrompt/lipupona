@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "C12: the value is split at the first #; a second # in the fragment is encoded."

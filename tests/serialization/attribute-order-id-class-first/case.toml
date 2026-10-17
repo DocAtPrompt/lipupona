@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "C11: id comes first, then class, then the other attributes."

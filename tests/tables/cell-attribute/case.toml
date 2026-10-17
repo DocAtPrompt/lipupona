@@ -1,0 +1,3 @@
+kind = "roundtrip"
+section = "5.9"
+note = "A cell with an attribute takes the cell-per-line form with an attribute prefix."

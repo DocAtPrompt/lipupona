@@ -1,0 +1,3 @@
+kind = "roundtrip"
+section = "5.13"
+note = "Two adjacent breaks switch the paragraph to one line with .br()."

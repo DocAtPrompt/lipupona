@@ -1,0 +1,3 @@
+kind = "tolerance"
+section = "7.4"
+note = "An unregistered type becomes an aside, displayed as element line, with a diagnostic."

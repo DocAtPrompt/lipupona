@@ -1,0 +1,3 @@
+kind = "passthrough"
+section = "5.11"
+note = "A comment inside phrasing stays where it is and is reported."

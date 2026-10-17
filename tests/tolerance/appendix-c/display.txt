@@ -1,0 +1,16 @@
+.h2#eisenmangel
+  Eisenmangel
+
+Eisenmangel ist die **häufigste** Mangelerscheinung weltweit.
+Frauen sind öfter betroffen.
+
+> [!warning] Nicht mit Tee einnehmen
+> Gerbstoffe hemmen die Aufnahme.
+
+Eisenpräparate
+| Präparat    | Dosis  |
+|-------------|--------|
+| Eisensulfat | 100 mg |
+
+> [!note]
+> Ferritin unter 30 µg/l spricht für leere Speicher.

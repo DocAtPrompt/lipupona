@@ -1,0 +1,3 @@
+kind = "roundtrip"
+section = "5.12"
+note = "A paragraph beginning with # and a space takes a backslash."

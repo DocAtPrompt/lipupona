@@ -1,0 +1,2 @@
+| Pfeil   | \^ |
+| Kleiner | \< |

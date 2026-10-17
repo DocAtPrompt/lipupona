@@ -1,0 +1,4 @@
+Beispiel:
+```
+fn main() {}
+```

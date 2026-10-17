@@ -1,0 +1,3 @@
+# Trailing whitespace in a test case can be what the case is about.
+[*]
+trim_trailing_whitespace = false

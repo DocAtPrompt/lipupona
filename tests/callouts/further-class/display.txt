@@ -1,0 +1,2 @@
+.div.callout.warning.dringend[role="note"]
+  Sofort absetzen.

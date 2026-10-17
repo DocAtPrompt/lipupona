@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "C8: content that begins with a line feed is written with one additional line feed."

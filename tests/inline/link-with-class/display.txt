@@ -1,0 +1,1 @@
+.a.extern[href="https://example.org/"](example.org)

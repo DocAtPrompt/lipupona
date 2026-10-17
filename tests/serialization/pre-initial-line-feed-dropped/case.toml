@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "C8: a line feed directly after <pre> is not content and is not written."

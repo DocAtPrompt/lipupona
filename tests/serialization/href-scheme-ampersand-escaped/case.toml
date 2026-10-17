@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "C5, C12: a value with a scheme is untouched, but & is still escaped as an attribute character."

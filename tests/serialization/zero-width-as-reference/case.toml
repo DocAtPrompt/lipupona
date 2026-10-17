@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "C4: U+200B, U+200C, U+200D, U+2060 and U+FEFF are written as hex references with four upper-case digits."

@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "C4: a literal U+00A0 is written as &nbsp;."

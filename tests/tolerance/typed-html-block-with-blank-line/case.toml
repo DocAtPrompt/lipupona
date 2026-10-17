@@ -1,0 +1,3 @@
+kind = "tolerance"
+section = "6"
+note = "A typed block fragment extends to its end tag, blank lines included."

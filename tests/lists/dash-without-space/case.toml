@@ -1,0 +1,3 @@
+kind = "roundtrip"
+section = "5.2"
+note = "- not followed by a space is text."

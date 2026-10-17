@@ -1,0 +1,3 @@
+kind = "roundtrip"
+section = "5.7"
+note = "Inside a quote §5.2 applies one level down, so > > is a nested quote."

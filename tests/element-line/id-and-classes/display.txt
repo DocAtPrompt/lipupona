@@ -1,0 +1,2 @@
+.aside#kinder.callout.tip
+  Kinder nehmen den Saft lieber gekühlt.

@@ -1,0 +1,2 @@
+.p[id="hinweis" class="wichtig"]
+  Nicht mit Tee einnehmen.

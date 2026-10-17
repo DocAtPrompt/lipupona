@@ -1,0 +1,3 @@
+kind = "roundtrip"
+section = "5.10"
+note = "A blank first line in the fence is a leading line feed in the pre (C8)."

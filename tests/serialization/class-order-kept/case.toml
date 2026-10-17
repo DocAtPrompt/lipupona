@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "C11: classes keep their order; whitespace between them becomes one space."

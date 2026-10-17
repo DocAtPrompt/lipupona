@@ -1,0 +1,3 @@
+kind = "tolerance"
+section = "6"
+note = "A typed HTML block at the start of a line is taken and displayed as notation."

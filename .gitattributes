@@ -1,0 +1,5 @@
+# LF everywhere, also on a Windows checkout with core.autocrlf set.
+* text=auto eol=lf
+
+# Test cases compare bytes; git never converts their line ends.
+tests/** -text

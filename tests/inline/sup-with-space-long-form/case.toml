@@ -1,0 +1,3 @@
+kind = "roundtrip"
+section = "5.1"
+note = "W1: sup with whitespace is written in the long form."

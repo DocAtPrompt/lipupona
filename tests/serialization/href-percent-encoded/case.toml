@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "C12: a path without scheme is percent-encoded in path and fragment; the # stays."

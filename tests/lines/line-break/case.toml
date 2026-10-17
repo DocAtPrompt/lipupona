@@ -1,0 +1,3 @@
+kind = "roundtrip"
+section = "5.2"
+note = "A text line after a text line belongs to the same paragraph, joined by <br>."

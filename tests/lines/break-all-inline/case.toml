@@ -1,0 +1,3 @@
+kind = "roundtrip"
+section = "5.13"
+note = "Once the paragraph is on one line, every break in it is written inline."

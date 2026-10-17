@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "C5, C8: & and < are escaped inside pre as well; > stays literal."

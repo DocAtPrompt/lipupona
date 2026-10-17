@@ -1,0 +1,3 @@
+kind = "tolerance"
+section = "7.2"
+note = "A folding callout without title stores the type name with an upper-case initial."

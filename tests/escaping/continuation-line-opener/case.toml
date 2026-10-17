@@ -1,0 +1,3 @@
+kind = "roundtrip"
+section = "5.12"
+note = "A continuation line that would read as a block opener takes a backslash."

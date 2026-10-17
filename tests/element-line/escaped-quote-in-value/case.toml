@@ -1,0 +1,3 @@
+kind = "roundtrip"
+section = "5.4.1"
+note = "Inside a value \\\" is a quote."

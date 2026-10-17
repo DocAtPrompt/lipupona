@@ -1,0 +1,2 @@
+.aside.callout.dosage
+  100 mg täglich.

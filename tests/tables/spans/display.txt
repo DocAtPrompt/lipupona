@@ -1,0 +1,6 @@
+Rowspan über drei Zeilen neben einem Colspan
+| Gruppe | Links      | Rechts   |
+|--------|------------|----------|
+| oral   | zweiwertig | <        |
+| ^      | Sulfat     | Gluconat |
+| ^      | Fumarat    | <        |

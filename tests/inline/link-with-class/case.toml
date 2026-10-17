@@ -1,0 +1,3 @@
+kind = "roundtrip"
+section = "5.1"
+note = "W1: a link with a class is written in the long form."

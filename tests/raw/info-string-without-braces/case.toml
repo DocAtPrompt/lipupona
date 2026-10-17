@@ -1,0 +1,3 @@
+kind = "tolerance"
+section = "6"
+note = "=html without braces is accepted; the display uses {=html}."

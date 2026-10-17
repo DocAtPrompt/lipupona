@@ -1,0 +1,3 @@
+kind = "roundtrip"
+section = "5.4.1"
+note = "A line that does not match the grammar completely is text."

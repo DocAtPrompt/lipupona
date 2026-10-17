@@ -1,0 +1,11 @@
+|=== 3
+| Gruppe
+| Links
+| Rechts
+|---
+.3+| oral
+2+| zweiwertig
+| Sulfat
+| Gluconat
+2+| Fumarat
+|===

@@ -1,0 +1,4 @@
+|=== 2
+[class="summe"]| Summe
+| 180 mg
+|===

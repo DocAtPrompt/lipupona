@@ -1,0 +1,3 @@
+kind = "passthrough"
+section = "A"
+note = "src is never absolute."

@@ -1,0 +1,3 @@
+kind = "tolerance"
+section = "6"
+note = "Typed inline HTML of profile elements is taken and displayed as notation."

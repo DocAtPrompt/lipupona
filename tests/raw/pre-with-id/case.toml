@@ -1,0 +1,3 @@
+kind = "roundtrip"
+section = "5.11"
+note = "A pre with an id can only be said as a raw block holding its canonical HTML."

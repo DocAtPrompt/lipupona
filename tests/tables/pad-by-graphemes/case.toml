@@ -1,0 +1,3 @@
+kind = "roundtrip"
+section = "5.9"
+note = "Column width is measured in graphemes; a flag is one."

@@ -1,0 +1,3 @@
+kind = "tolerance"
+section = "4"
+note = "C7: runs of spaces typed in a line collapse to one."

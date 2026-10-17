@@ -1,0 +1,3 @@
+kind = "tolerance"
+section = "6"
+note = "A tilde fence is read as a pre and displayed with backticks."

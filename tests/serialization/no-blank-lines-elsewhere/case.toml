@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "C9: blank lines between other blocks are removed."

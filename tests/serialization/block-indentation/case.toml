@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "C6: blocks are indented two spaces per level."

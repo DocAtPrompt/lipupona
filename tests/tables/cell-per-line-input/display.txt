@@ -1,0 +1,5 @@
+| Gruppe | Links      | Rechts   |
+|--------|------------|----------|
+| oral   | zweiwertig | <        |
+| ^      | Sulfat     | Gluconat |
+| ^      | Fumarat    | <        |
