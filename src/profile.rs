@@ -97,11 +97,13 @@ impl Profile {
         use Model::*;
         Some(match name {
             "h1" | "h2" | "h3" | "h4" | "p" | "summary" => (Block, Phrasing),
-            "li" => (Block, Lead),
+            "li" | "dd" => (Block, Lead),
+            "dt" => (Block, Phrasing),
             "td" | "th" | "caption" | "figcaption" => (Block, Either),
             "pre" => (Block, Text),
             "hr" => (Block, Void),
             "ul" | "ol" => (Block, Items(&["li"])),
+            "dl" => (Block, Items(&["dt", "dd"])),
             "table" => (Block, Table),
             "thead" | "tbody" | "tfoot" => (Block, Items(&["tr"])),
             "tr" => (Block, Items(&["th", "td"])),
@@ -440,7 +442,7 @@ impl Profile {
         self.check_sequence(&el, model, out);
 
         let container = self.is_container(&el);
-        let list = matches!(el.name.as_str(), "ul" | "ol");
+        let list = matches!(el.name.as_str(), "ul" | "ol" | "dl");
         if container && ctx.in_structure {
             out.push(Diagnostic::new(
                 Code::ConstraintViolated,
@@ -503,6 +505,7 @@ impl Profile {
         let name = el.name.as_str();
         let required_parent: Option<&[&str]> = match name {
             "li" => Some(&["ul", "ol"]),
+            "dt" | "dd" => Some(&["dl"]),
             "tr" => Some(&["thead", "tbody", "tfoot"]),
             "td" | "th" => Some(&["tr"]),
             "thead" | "tbody" | "tfoot" | "caption" => Some(&["table"]),
@@ -571,6 +574,15 @@ impl Profile {
                     .collect();
                 captions.len() <= 1 && captions.iter().all(|&i| i == 0 || i + 1 == names.len())
             }
+            // Groups of one or more terms, then one or more definitions.
+            // Anything else in a dl is reported where it stands.
+            Model::Items(_) if el.name == "dl" => {
+                let terms: Vec<&&str> = names
+                    .iter()
+                    .filter(|n| matches!(**n, "dt" | "dd"))
+                    .collect();
+                terms.first() == Some(&&"dt") && terms.last() == Some(&&"dd")
+            }
             Model::Table => {
                 let mut rest = names.as_slice();
                 for optional in ["caption", "thead"] {
@@ -616,6 +628,9 @@ fn static_name(name: &str) -> &'static str {
         "p",
         "summary",
         "li",
+        "dl",
+        "dt",
+        "dd",
         "td",
         "th",
         "caption",

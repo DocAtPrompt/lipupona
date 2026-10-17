@@ -369,6 +369,7 @@ tolerated forms of §6:
 |---|---|
 | `#` … (up to the profile's deepest level, then a space) | heading |
 | `- `, `1. ` (any number) | list item (§5.6) |
+| `: ` or `:` alone, directly after a paragraph of one line | definition list (§5.6.1) |
 | `>` at the start of a line | blockquote (§5.7), callout if followed by ` [!` (§7.3) |
 | `---` alone | `hr` |
 | three or more backticks or tildes | code fence (§5.10) or raw block (§5.11) |
@@ -391,11 +392,12 @@ content (C7): `  Text` at the top level is the paragraph `Text`.
 3. A block opener ends the paragraph, whether or not a blank line came first.
 
 **Every other construct says how it continues and ends:** a heading, an `hr`
-and an attribute line are one line each; a list by §5.6; a blockquote or
-callout as long as lines begin with `>`; a table as long as lines begin with
-`|`; a fence, a fenced container, a comment and a typed HTML block until their
-closing line, blank lines inside included; an element line by the indented
-lines below it, blank lines between them included.
+and an attribute line are one line each; a list by §5.6 and a definition
+list by §5.6.1; a blockquote or callout as long as lines begin with `>`; a
+table as long as lines begin with `|`; a fence, a fenced container, a
+comment and a typed HTML block until their closing line, blank lines inside
+included; an element line by the indented lines below it, blank lines
+between them included.
 
 A fence or a fenced container that is never closed extends to the end of the
 unit. A typed HTML block that is never closed is not well-formed and its line
@@ -628,6 +630,56 @@ level**, up to the profile's list depth.
   empty, is written as an element line `.ul` / `.ol` with `.li` lines below it.
   So is a list that directly follows another list of the same kind — written
   with the short form, the two would read as one.
+
+#### 5.6.1 Definition lists
+
+A term on a line of its own, then its definitions, each on a line beginning
+with `: `:
+
+```
+Ferritin
+: Speichereisen
+Transferrin
+: Transportprotein
+
+  Steigt bei Eisenmangel.
+```
+
+```html
+<dl>
+  <dt>Ferritin</dt>
+  <dd>Speichereisen</dd>
+  <dt>Transferrin</dt>
+  <dd>
+    Transportprotein
+    <p>Steigt bei Eisenmangel.</p>
+  </dd>
+</dl>
+```
+
+- **The term.** A line beginning with `: `, or `:` alone, directly after a
+  paragraph of exactly one line makes that line the term (`dt`, phrasing)
+  and opens a definition list. After a longer paragraph, or with no
+  paragraph directly above, it is a text line: a paragraph is a term only as
+  a whole, as it is a caption only as a whole (§5.9).
+- **Definitions.** Each `: ` line is a definition (`dd`, content model
+  *lead*) and is read like a list item (§5.6): an indented text line
+  continues its phrasing, a blank line followed by indented content starts a
+  new block inside it, and `:` alone is an empty definition. Several `: `
+  lines after a term are several definitions of it.
+- **Extent.** The list goes on while the next line that is not blank, at the
+  list's indentation, is a `: ` line or a term — a text line directly
+  followed by a `: ` line. Blank lines between them do not end it, and the
+  writer writes none.
+- A definition list is a structure (it holds no container) and counts
+  towards the list depth, as `ul` and `ol` do.
+- **W2.** A text line that begins with `: `, or is `:` alone, directly after
+  the first line of a paragraph takes a backslash: `\: `.
+- **Element-line form.** A definition list is written as an element line
+  `.dl` with `.dt` and `.dd` lines below it when a term holds a line break
+  or is followed by another term, a definition begins with a block or is
+  empty, a `dt` or `dd` carries an attribute, or the list directly follows
+  another definition list.
 
 ### 5.7 Blockquote
 

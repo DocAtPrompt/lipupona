@@ -1,0 +1,3 @@
+kind = "passthrough"
+section = "A"
+note = "A definition list counts towards the list depth."

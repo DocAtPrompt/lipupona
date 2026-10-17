@@ -150,6 +150,7 @@ impl<'p> Writer<'p> {
             n if is_heading(n) => self.heading(e),
             "hr" if e.attrs.is_empty() => vec!["---".into()],
             "ul" | "ol" => self.list(e, prev),
+            "dl" => self.definition_list(e, prev),
             "blockquote" if e.attrs.is_empty() => self.quote(e),
             "pre" => self.pre(e),
             "table" => self.table(e),
@@ -184,7 +185,10 @@ impl<'p> Writer<'p> {
         lines.iter().any(|l| {
             l.trim_matches(SP).is_empty()
                 || l.starts_with(SP)
-                || block::opener(self.profile, l, figure).is_some()
+                || !matches!(
+                    block::opener(self.profile, l, figure),
+                    None | Some(block::Opener::Definition(_))
+                )
         })
     }
 
@@ -336,6 +340,60 @@ impl<'p> Writer<'p> {
                 }
                 lines.extend(indent(self.block(b, None, false)));
                 first = false;
+            }
+        }
+        lines
+    }
+
+    /// §5.6.1.
+    fn definition_list(&self, e: &Element, prev: Option<&Node>) -> Vec<String> {
+        let children: Vec<&Element> = e.children.iter().filter_map(Node::element).collect();
+        let after_same = prev.and_then(Node::element).is_some_and(|p| p.name == "dl");
+        let shape_ok = children.first().is_some_and(|c| c.name == "dt")
+            && children
+                .windows(2)
+                .all(|w| !(w[0].name == "dt" && w[1].name == "dt"))
+            && children.iter().all(|c| {
+                c.attrs.is_empty()
+                    && (c.name == "dt"
+                        || c.children
+                            .iter()
+                            .find(|n| !n.is_blank_text())
+                            .is_some_and(|n| !self.profile.is_block(n)))
+            });
+        if after_same || !e.attrs.is_empty() || !shape_ok {
+            return self.element_line(e);
+        }
+        let mut lines = Vec::new();
+        for c in children {
+            if c.name == "dt" {
+                let term = self.phrasing_lines(&c.children, Mode::Paragraph);
+                if term.len() != 1 || term[0].is_empty() || self.opens_block(&term, false) {
+                    return self.element_line(e);
+                }
+                lines.extend(term);
+                continue;
+            }
+            let split = c
+                .children
+                .iter()
+                .position(|n| self.profile.is_block(n))
+                .unwrap_or(c.children.len());
+            let (lead, rest) = c.children.split_at(split);
+            let lead_lines = self.phrasing_lines(lead, Mode::Paragraph);
+            if self.opens_block(&lead_lines, false) {
+                return self.element_line(e);
+            }
+            for (n, l) in lead_lines.into_iter().enumerate() {
+                if n == 0 {
+                    lines.push(format!(": {l}").trim_end_matches(SP).to_string());
+                } else {
+                    lines.push(if l.is_empty() { l } else { format!("  {l}") });
+                }
+            }
+            for b in rest.iter().filter(|n| !n.is_blank_text()) {
+                lines.push(String::new());
+                lines.extend(indent(self.block(b, None, false)));
             }
         }
         lines
@@ -777,7 +835,8 @@ impl<'p> Writer<'p> {
                     .iter()
                     .position(|&x| x == '\n')
                     .map_or(c.len(), |k| i + k);
-                target = block::opener_escape(self.profile, &c[i..end]).map(|k| i + k);
+                let line = c[..i].iter().filter(|&&x| x == '\n').count();
+                target = block::opener_escape(self.profile, &c[i..end], line).map(|k| i + k);
             }
             if target.is_none() {
                 target = inline::construct_at(self.profile, &mut scan, &c, i, c.len());

@@ -86,7 +86,7 @@ Version 0.2.0, a draft for review.
 
 - [`SPEC.md`](SPEC.md) — the specification
 - [`profiles/reference.md`](profiles/reference.md) — the reference profile
-- [`tests/`](tests/) — the test suite, 343 cases in a language-neutral format
+- [`tests/`](tests/) — the test suite, 357 cases in a language-neutral format
 - [`docs/converters.md`](docs/converters.md) — work plan for md2lipupona and
   html2lipupona; [`converters/md2lipupona`](converters/md2lipupona) converts
   CommonMark, GFM and Obsidian's Markdown, with a report of every loss

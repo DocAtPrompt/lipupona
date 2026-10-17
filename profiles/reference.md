@@ -17,12 +17,15 @@ case names another.
 | `p` | phrasing | — |
 | `summary` | phrasing | first child of `details`, required there |
 | `li` | lead | inside `ul` / `ol` |
+| `dt` | phrasing | inside `dl` |
+| `dd` | lead | inside `dl` |
 | `td` `th` | either | inside `tr` |
 | `caption` | either | first child of `table` |
 | `figcaption` | either | first or last child of `figure` |
 | `pre` | text | structure |
 | `hr` | void | — |
 | `ul` `ol` | `li` only | structure |
+| `dl` | groups of one or more `dt`, then one or more `dd` | structure (SPEC §5.6.1) |
 | `table` | `caption`?, `thead`?, `tbody`, `tfoot`? | structure |
 | `thead` `tbody` `tfoot` | `tr` only | inside `table` |
 | `tr` | `th`, `td` | inside `thead` / `tbody` / `tfoot` |
@@ -50,7 +53,7 @@ declares per use.
 | Limit | Value |
 |---|---|
 | Container depth | 2 (for example columns: one parent, one child per column) |
-| List depth | 3 |
+| List depth | 3 (`ul`, `ol` and `dl` count) |
 | Deepest heading | `h4` |
 | Pipe grid columns | 6 |
 | Nesting depth | 256 elements, as in every profile (SPEC §3.4) |

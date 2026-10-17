@@ -164,6 +164,9 @@ pub(crate) enum Opener {
         number: Option<u64>,
         content: String,
     },
+    /// `: ` or `:` alone: a definition, if a one-line paragraph is above it
+    /// (§5.6.1).
+    Definition(String),
     ElementLine(syntax::Selector),
 }
 
@@ -248,6 +251,9 @@ pub(crate) fn opener(profile: &Profile, rest: &str, figure: bool) -> Option<Open
             (!name.is_empty() && boundary && profile.kind(&name) == Some(Kind::Block))
                 .then_some(Opener::TypedBlock)
         }
+        ':' if c.len() == 1 || c.get(1) == Some(&' ') => Some(Opener::Definition(
+            c.get(2..).map(|r| r.iter().collect()).unwrap_or_default(),
+        )),
         ':' if run(':') >= 3 => {
             let len = run(':');
             Some(Opener::Container {
@@ -398,6 +404,12 @@ impl<'p> Reader<'p> {
                 i += 1;
                 continue;
             }
+            // A definition needs a one-line paragraph above it, its term.
+            if matches!(op, Opener::Definition(_)) && para.len() != 1 {
+                para.push(rest);
+                i += 1;
+                continue;
+            }
             // What only looks like a comment or typed HTML block is text.
             let found = match &op {
                 Opener::Comment | Opener::TypedBlock => {
@@ -432,7 +444,8 @@ impl<'p> Reader<'p> {
                 i += 1;
                 continue;
             }
-            let caption = if matches!(op, Opener::Grid | Opener::CellTable) && para.len() == 1 {
+            let takes_line = matches!(op, Opener::Grid | Opener::CellTable | Opener::Definition(_));
+            let caption = if takes_line && para.len() == 1 {
                 para.pop()
             } else {
                 self.flush(&mut para, &mut out, &mut pending);
@@ -525,6 +538,12 @@ impl<'p> Reader<'p> {
             }
             Opener::Item { number, .. } => {
                 let (node, next) = self.list(lines, i, number.is_some());
+                out.push(node);
+                next
+            }
+            Opener::Definition(_) => {
+                let term = caption.unwrap_or_default();
+                let (node, next) = self.definition_list(lines, i, term);
                 out.push(node);
                 next
             }
@@ -887,6 +906,85 @@ impl<'p> Reader<'p> {
         node
     }
 
+    /// The content of a list item or definition (content model *lead*):
+    /// its lines read as blocks, a leading paragraph unwrapped when the first
+    /// line opens no block.
+    fn item(&mut self, body: &[String]) -> Vec<Node> {
+        let first = body[0].trim_start_matches(SP);
+        let lead = !first.trim_matches(SP).is_empty()
+            && matches!(
+                opener(self.profile, first, false),
+                None | Some(Opener::Definition(_))
+            );
+        let mut nodes = self.blocks(body, false);
+        let leading_p =
+            matches!(nodes.first(), Some(Node::Element(p)) if p.name == "p" && p.attrs.is_empty());
+        if lead
+            && leading_p
+            && let Node::Element(p) = nodes.remove(0)
+        {
+            let mut lead_nodes = p.children;
+            lead_nodes.extend(nodes);
+            nodes = lead_nodes;
+        }
+        nodes
+    }
+
+    /// §5.6.1: a definition list whose first definition is at `lines[start]`,
+    /// below `term`.
+    fn definition_list(&mut self, lines: &[String], start: usize, term: String) -> (Node, usize) {
+        let base = indent_width(&lines[start]);
+        let at_level = |line: &str| indent_width(line) < base + 2;
+        let def_at = |line: &str| -> Option<String> {
+            if !at_level(line) {
+                return None;
+            }
+            match opener(self.profile, line.trim_start_matches(SP), false) {
+                Some(Opener::Definition(content)) => Some(content),
+                _ => None,
+            }
+        };
+        // A term: a text line directly followed by a definition.
+        let term_at = |k: usize| -> bool {
+            let line = &lines[k];
+            !is_blank(line)
+                && at_level(line)
+                && opener(self.profile, line.trim_start_matches(SP), false).is_none()
+                && lines.get(k + 1).is_some_and(|l| def_at(l).is_some())
+        };
+        let mut children = Vec::new();
+        let mut term = Some(term);
+        let mut i = start;
+        loop {
+            if let Some(t) = term.take() {
+                // dl, dt
+                let nodes = self.inside(2, |r| r.phrasing(t.trim_matches(SP)));
+                children.push(element("dt", Vec::new(), nodes));
+            }
+            while let Some(content) = lines.get(i).and_then(|l| def_at(l)) {
+                let next_item = |l: &str| def_at(l).is_some() || !is_blank(l) && at_level(l);
+                let (body, next) = item_body(lines, i, base, content, next_item);
+                // dl, dd
+                let nodes = self.inside(2, |r| r.item(&body));
+                children.push(element("dd", Vec::new(), nodes));
+                i = next;
+            }
+            let Some(k) = (i..lines.len()).find(|&k| !is_blank(&lines[k])) else {
+                break;
+            };
+            if !term_at(k) {
+                break;
+            }
+            term = Some(lines[k].trim_start_matches(SP).to_string());
+            i = k + 1;
+        }
+        // Blank lines after the last definition belong to the context.
+        while i > start && is_blank(&lines[i - 1]) {
+            i -= 1;
+        }
+        (element("dl", Vec::new(), children), i)
+    }
+
     /// §5.6: a list at `lines[i]`.
     fn list(&mut self, lines: &[String], start: usize, ordered: bool) -> (Node, usize) {
         // Levels count from the list's own first line.
@@ -909,46 +1007,14 @@ impl<'p> Reader<'p> {
             if first_number.is_none() {
                 first_number = number;
             }
-            let mut body = vec![content];
-            i += 1;
-            while i < lines.len() {
-                if is_blank(&lines[i]) {
-                    let next = (i..lines.len()).find(|&k| !is_blank(&lines[k]));
-                    match next {
-                        Some(k) if indent_width(&lines[k]) >= base + 2 => {
-                            body.extend(std::iter::repeat_n(String::new(), k - i));
-                            i = k;
-                        }
-                        Some(k) if item_at(&lines[k]).is_some() => {
-                            i = k;
-                            break;
-                        }
-                        _ => break,
-                    }
-                } else if indent_width(&lines[i]) >= base + 2 {
-                    body.push(dedent(&lines[i], base + 2));
-                    i += 1;
-                } else {
-                    break;
-                }
-            }
+            let (body, next) = item_body(lines, i, base, content, |l| item_at(l).is_some());
             items.push(body);
+            i = next;
         }
         let mut children = Vec::new();
         for body in items {
-            let lead = !body[0].trim_matches(SP).is_empty()
-                && opener(self.profile, body[0].trim_start_matches(SP), false).is_none();
             // ul or ol, li
-            let mut nodes = self.inside(2, |r| r.blocks(&body, false));
-            let leading_p = matches!(nodes.first(), Some(Node::Element(p)) if p.name == "p" && p.attrs.is_empty());
-            if lead
-                && leading_p
-                && let Node::Element(p) = nodes.remove(0)
-            {
-                let mut lead_nodes = p.children;
-                lead_nodes.extend(nodes);
-                nodes = lead_nodes;
-            }
+            let nodes = self.inside(2, |r| r.item(&body));
             children.push(element("li", Vec::new(), nodes));
         }
         let mut attrs = Vec::new();
@@ -1011,10 +1077,52 @@ fn heading_braces(t: &str) -> (String, Vec<Attr>) {
     (t.to_string(), Vec::new())
 }
 
+/// The lines of an item whose first line, at `lines[i]`, holds `content`:
+/// lines indented below the item's level, and blank lines followed by such
+/// lines; blank lines followed by the next item (`next`) end it. Returns the
+/// body and the index after it.
+fn item_body(
+    lines: &[String],
+    mut i: usize,
+    base: usize,
+    content: String,
+    next: impl Fn(&str) -> bool,
+) -> (Vec<String>, usize) {
+    let mut body = vec![content];
+    i += 1;
+    while i < lines.len() {
+        if is_blank(&lines[i]) {
+            match (i..lines.len()).find(|&k| !is_blank(&lines[k])) {
+                Some(k) if indent_width(&lines[k]) >= base + 2 => {
+                    body.extend(std::iter::repeat_n(String::new(), k - i));
+                    i = k;
+                }
+                Some(k) if next(&lines[k]) => {
+                    i = k;
+                    break;
+                }
+                _ => break,
+            }
+        } else if indent_width(&lines[i]) >= base + 2 {
+            body.push(dedent(&lines[i], base + 2));
+            i += 1;
+        } else {
+            break;
+        }
+    }
+    (body, i)
+}
+
 /// W2 at the start of a line: if the line would open a block, the index of
 /// the character to put a backslash before.
-pub(crate) fn opener_escape(profile: &Profile, line: &[char]) -> Option<usize> {
+/// `line` is the line's index in its run of phrasing: a definition opens
+/// only directly after a first line (§5.6.1).
+pub(crate) fn opener_escape(profile: &Profile, line: &[char], index: usize) -> Option<usize> {
     let s: String = line.iter().collect();
-    opener(profile, &s, false)?;
+    if let Opener::Definition(_) = opener(profile, &s, false)?
+        && index != 1
+    {
+        return None;
+    }
     line.iter().position(|c| c.is_ascii_punctuation())
 }
