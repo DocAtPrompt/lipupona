@@ -1,0 +1,8 @@
+[package]
+name = "lipupona"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+description = "Reader, writer and canonicaliser for lipupona, a plain-text notation for profiled HTML"
+
+[dependencies]
