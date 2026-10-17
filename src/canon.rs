@@ -485,6 +485,14 @@ mod tests {
     }
 
     #[test]
+    fn deep_input_stays_linear() {
+        let profile = Profile::reference("test");
+        let input = format!("{}{}", "<div>".repeat(300), "x<div>".repeat(100_000));
+        let out = canon(&input, &profile);
+        assert_eq!(out.text, format!("{input}\n"));
+    }
+
+    #[test]
     fn spans_refer_to_the_input() {
         let input = "\u{feff}<p>a</p>\r\n<ul>\r\n<li>b\r\n</ul>";
         let nodes = html::parse(input);

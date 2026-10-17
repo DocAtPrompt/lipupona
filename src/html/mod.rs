@@ -32,6 +32,7 @@ pub fn parse(input: &str) -> Vec<Node> {
         root: Vec::new(),
         in_head: false,
         ignore_lf: false,
+        too_deep: false,
     };
     p.run();
     let mut nodes = p.root;
@@ -253,6 +254,8 @@ struct Parser<'a> {
     root: Vec<Node>,
     in_head: bool,
     ignore_lf: bool,
+    /// The deepest open element holds a [`TOO_DEEP`] mark already.
+    too_deep: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -374,12 +377,7 @@ impl<'a> Parser<'a> {
             return;
         }
         if self.stack.len() >= MAX_DEPTH {
-            let marked = self.stack.last().is_some_and(|e| {
-                e.children
-                    .iter()
-                    .any(|c| matches!(c, Node::Element(m) if m.name == TOO_DEEP))
-            });
-            if !marked {
+            if !std::mem::replace(&mut self.too_deep, true) {
                 self.append(Node::Element(Element {
                     name: TOO_DEEP.into(),
                     attrs: Vec::new(),
@@ -587,6 +585,7 @@ impl<'a> Parser<'a> {
         let Some(mut el) = self.stack.pop() else {
             return;
         };
+        self.too_deep = false;
         el.span.end = end.max(el.span.start);
         el.implied_end = implied;
         self.append(Node::Element(el));
