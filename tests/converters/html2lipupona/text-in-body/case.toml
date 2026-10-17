@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3"
+note = "Text directly in body becomes a paragraph."
+mode = "export"

@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3"
+note = "An aside is unwrapped, never a callout."
+mode = "export"

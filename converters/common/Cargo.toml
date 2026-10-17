@@ -1,0 +1,11 @@
+[package]
+name = "lipupona-convert"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+license = "MIT OR Apache-2.0"
+description = "What lipupona's converters share: the report entry and the repairs of a built tree"
+repository = "https://github.com/DocAtPrompt/lipupona"
+
+[dependencies]
+lipupona = { path = "../.." }

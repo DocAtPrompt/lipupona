@@ -9,6 +9,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
 
 [[package]]
+name = "html2lipupona"
+version = "0.1.0"
+dependencies = [
+ "lipupona",
+ "lipupona-convert",
+]
+
+[[package]]
 name = "lipupona"
 version = "0.2.0"
 dependencies = [
@@ -17,10 +25,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "lipupona-convert"
+version = "0.1.0"
+dependencies = [
+ "lipupona",
+]
+
+[[package]]
 name = "md2lipupona"
 version = "0.1.0"
 dependencies = [
  "lipupona",
+ "lipupona-convert",
  "pulldown-cmark",
 ]
 

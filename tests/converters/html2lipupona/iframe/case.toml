@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3"
+note = "An embedded frame becomes a link to its source."
+mode = "export"

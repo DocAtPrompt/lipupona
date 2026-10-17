@@ -19,5 +19,10 @@ name = "suite"
 harness = false
 
 [workspace]
-members = ["converters/md2lipupona"]
-default-members = [".", "converters/md2lipupona"]
+members = ["converters/common", "converters/md2lipupona", "converters/html2lipupona"]
+default-members = [
+    ".",
+    "converters/common",
+    "converters/md2lipupona",
+    "converters/html2lipupona",
+]

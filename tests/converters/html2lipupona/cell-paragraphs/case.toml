@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3"
+note = "A cell's only paragraph is its phrasing, so a table from Word stays a data table."
+mode = "export"

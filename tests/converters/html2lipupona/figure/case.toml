@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3"
+note = "figure, figcaption and img stay."
+mode = "export"

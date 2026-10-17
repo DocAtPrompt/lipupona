@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3"
+note = "strike and del become s."
+mode = "export"

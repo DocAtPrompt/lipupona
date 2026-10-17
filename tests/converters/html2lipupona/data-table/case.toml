@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3"
+note = "A data table keeps its cells; a first row of th becomes thead."
+mode = "export"

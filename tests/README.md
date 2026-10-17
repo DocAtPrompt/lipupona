@@ -69,7 +69,9 @@ without `meta.txt` expects no values.
   `gfm` or `obsidian`), `resolve` (obsidian cases: `pages`, a resolver that
   finds every target without a `?`, maps `Ziel` to `ziel.html`,
   `Ziel#Abschnitt` to `ziel.html#Abschnitt` and keeps a name with an
-  extension, `bild.png`, as it is; without the key there is no resolver).
+  extension, `bild.png`, as it is; without the key there is no resolver),
+  `mode` (converter cases of html2lipupona: `export`, the default, or
+  `article`).
 - Implementation-specific names use `test`: the island marker is
   `data-test-rendered`, reserved attributes are `data-test-*`. A runner
   substitutes its own name.

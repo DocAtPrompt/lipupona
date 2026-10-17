@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3"
+note = "colspan and rowspan stay."
+mode = "export"

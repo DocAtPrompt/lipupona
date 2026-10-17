@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3"
+note = "small and q keep their text, each name reported once."
+mode = "export"

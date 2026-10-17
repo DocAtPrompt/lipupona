@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3"
+note = "div and span without meaning are unwrapped; text in a container becomes a paragraph."
+mode = "export"

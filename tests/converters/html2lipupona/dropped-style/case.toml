@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3"
+note = "A style without a counterpart is dropped and reported."
+mode = "export"

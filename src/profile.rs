@@ -79,6 +79,16 @@ impl Profile {
         self.grid_columns
     }
 
+    /// Whether `name` is an element of the profile.
+    pub fn has(&self, name: &str) -> bool {
+        self.element(name).is_some()
+    }
+
+    /// Whether `name` is an inline element of the profile.
+    pub fn is_inline(&self, name: &str) -> bool {
+        self.kind(name) == Some(Kind::Inline)
+    }
+
     /// The deepest list level.
     pub fn list_depth(&self) -> usize {
         self.list_depth

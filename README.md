@@ -89,7 +89,9 @@ Version 0.2.0, a draft for review.
 - [`tests/`](tests/) — the test suite, 357 cases in a language-neutral format
 - [`docs/converters.md`](docs/converters.md) — work plan for md2lipupona and
   html2lipupona; [`converters/md2lipupona`](converters/md2lipupona) converts
-  CommonMark, GFM and Obsidian's Markdown, with a report of every loss
+  CommonMark, GFM and Obsidian's Markdown,
+  [`converters/html2lipupona`](converters/html2lipupona) HTML exported by
+  editors, each with a report of every loss
 - [`docs/ports.md`](docs/ports.md) — plan for bindings and ports, and the
   constraints on the core that keep them possible
 - `src/` — the reference implementation in Rust: `canon`, `html` (reading

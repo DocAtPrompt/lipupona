@@ -1,0 +1,16 @@
+[package]
+name = "html2lipupona"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+license = "MIT OR Apache-2.0"
+description = "Converts foreign HTML (editor exports) into lipupona's canonical HTML and reports every loss"
+repository = "https://github.com/DocAtPrompt/lipupona"
+
+[dependencies]
+lipupona = { path = "../.." }
+lipupona-convert = { path = "../common" }
+
+[[test]]
+name = "suite"
+harness = false

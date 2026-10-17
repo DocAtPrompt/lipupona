@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3"
+note = "An image with an absolute source becomes a link to it."
+mode = "export"

@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3"
+note = "Character references are decoded and written per C4."
+mode = "export"

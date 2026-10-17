@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3"
+note = "vertical-align super and sub become sup and sub."
+mode = "export"

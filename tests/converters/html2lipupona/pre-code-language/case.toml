@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3"
+note = "pre loses its code; a language class moves to the pre."
+mode = "export"

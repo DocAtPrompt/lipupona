@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3"
+note = "Bold, italic and line-through in a style become strong, em and s."
+mode = "export"

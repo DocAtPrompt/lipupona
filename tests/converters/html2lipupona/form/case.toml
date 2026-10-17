@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3"
+note = "Form controls are dropped; the text of a label stays."
+mode = "export"

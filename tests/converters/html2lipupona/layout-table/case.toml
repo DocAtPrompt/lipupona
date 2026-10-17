@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3"
+note = "A table of one cell is unwrapped and reported."
+mode = "export"

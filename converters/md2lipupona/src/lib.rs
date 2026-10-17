@@ -12,8 +12,12 @@ mod obsidian;
 use std::collections::HashMap;
 use std::ops::Range;
 
-use lipupona::dom::{Attr, Comment, Element, Node, Text};
+use lipupona::dom::{Attr, Comment, Element, Node};
 use lipupona::{Code, Profile};
+pub use lipupona_convert::Entry;
+use lipupona_convert::{
+    attr, element, flatten_lists, is_absolute, lead_then_blocks, plain_text, text,
+};
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, LinkType, Options, Parser, Tag, TagEnd};
 
 /// The Markdown dialect to read.
@@ -58,14 +62,6 @@ pub struct Meta {
     pub tags: Vec<String>,
     /// Other frontmatter keys with their values as written.
     pub other: Vec<(String, String)>,
-}
-
-/// One entry of the report: a stable code (`docs/converters.md` §4 or the
-/// diagnostics of SPEC §9.3) and what it is about.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Entry {
-    pub code: String,
-    pub message: String,
 }
 
 /// The result of a conversion: the body content as canonical HTML (ending
@@ -183,45 +179,6 @@ struct Builder<'a> {
     /// Names of raw start tags that stayed text: their end tags are text
     /// too, without a second report.
     literal: Vec<String>,
-}
-
-fn element(name: &str, attrs: Vec<Attr>) -> Element {
-    Element {
-        name: name.to_string(),
-        attrs,
-        children: Vec::new(),
-        span: 0..0,
-        implied_end: false,
-    }
-}
-
-fn attr(name: &str, value: impl Into<String>) -> Attr {
-    Attr {
-        name: name.to_string(),
-        value: value.into(),
-    }
-}
-
-fn text(s: impl Into<String>) -> Node {
-    Node::Text(Text {
-        text: s.into(),
-        span: 0..0,
-    })
-}
-
-/// Whether `src` is absolute in the sense of the profile: a scheme or a
-/// leading `/`.
-fn is_absolute(src: &str) -> bool {
-    if src.starts_with('/') {
-        return true;
-    }
-    let mut chars = src.chars();
-    chars.next().is_some_and(|c| c.is_ascii_alphabetic())
-        && src.find(':').is_some_and(|k| {
-            src[..k]
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || "+.-".contains(c))
-        })
 }
 
 impl<'a> Builder<'a> {
@@ -634,7 +591,7 @@ impl<'a> Builder<'a> {
             TagEnd::Item | TagEnd::FootnoteDefinition => {
                 self.unwrap_first_paragraph();
                 if let Some(f) = self.stack.last_mut() {
-                    lead_then_blocks(&mut f.el.children);
+                    lead_then_blocks(self.profile, &mut f.el.children);
                 }
                 self.close();
             }
@@ -813,149 +770,4 @@ impl<'a> Builder<'a> {
         root.push(Node::Element(ol));
         root
     }
-}
-
-/// Content of a list item: phrasing may only lead (content model *lead*);
-/// a run of phrasing after a block, as a tight list gives it, becomes a
-/// paragraph.
-fn lead_then_blocks(children: &mut Vec<Node>) {
-    let phrasing = |n: &Node| match n {
-        Node::Text(_) | Node::Comment(_) => true,
-        Node::Element(e) => matches!(
-            e.name.as_str(),
-            "strong"
-                | "em"
-                | "mark"
-                | "code"
-                | "s"
-                | "sup"
-                | "sub"
-                | "kbd"
-                | "a"
-                | "span"
-                | "time"
-                | "br"
-                | "img"
-        ),
-        Node::Verbatim(v) => !v.block,
-    };
-    let mut out = Vec::with_capacity(children.len());
-    let mut run: Vec<Node> = Vec::new();
-    let mut seen_block = false;
-    for node in std::mem::take(children) {
-        if phrasing(&node) {
-            if seen_block {
-                run.push(node);
-            } else {
-                out.push(node);
-            }
-            continue;
-        }
-        flush_run(&mut run, &mut out);
-        seen_block = true;
-        out.push(node);
-    }
-    flush_run(&mut run, &mut out);
-    *children = out;
-}
-
-fn flush_run(run: &mut Vec<Node>, out: &mut Vec<Node>) {
-    if run.iter().all(|n| n.is_blank_text()) {
-        run.clear();
-        return;
-    }
-    let mut p = element("p", Vec::new());
-    p.children = std::mem::take(run);
-    out.push(Node::Element(p));
-}
-
-/// The text of `nodes` and their descendants.
-fn plain_text(nodes: &[Node]) -> String {
-    let mut out = String::new();
-    for node in nodes {
-        match node {
-            Node::Text(t) => out.push_str(&t.text),
-            Node::Element(e) => out.push_str(&plain_text(&e.children)),
-            _ => {}
-        }
-    }
-    out
-}
-
-fn is_list(el: &Element) -> bool {
-    matches!(el.name.as_str(), "ul" | "ol")
-}
-
-/// Moves the items of lists below level `max` up into level `max`, after
-/// the item they stood in. Returns how many outermost lists changed.
-fn flatten_lists(nodes: &mut [Node], max: usize) -> usize {
-    nodes
-        .iter_mut()
-        .map(|node| match node {
-            Node::Element(el) if is_list(el) => usize::from(flatten_in(el, 1, max)),
-            Node::Element(el) => flatten_lists(&mut el.children, max),
-            _ => 0,
-        })
-        .sum()
-}
-
-/// Flattens what lies below the list `el` at `level`; whether anything
-/// moved.
-fn flatten_in(el: &mut Element, level: usize, max: usize) -> bool {
-    if level >= max {
-        return flatten_items(el);
-    }
-    fn visit(nodes: &mut [Node], level: usize, max: usize) -> bool {
-        let mut moved = false;
-        for node in nodes {
-            if let Node::Element(el) = node {
-                moved |= match is_list(el) {
-                    true => flatten_in(el, level + 1, max),
-                    false => visit(&mut el.children, level, max),
-                };
-            }
-        }
-        moved
-    }
-    visit(&mut el.children, level, max)
-}
-
-/// Flattens a list at the deepest level: every list inside one of its items
-/// gives its items, flattened in turn, to follow that item. Whether anything
-/// moved.
-fn flatten_items(list: &mut Element) -> bool {
-    let mut moved = false;
-    let mut items = Vec::new();
-    for node in std::mem::take(&mut list.children) {
-        let Node::Element(mut li) = node else {
-            items.push(node);
-            continue;
-        };
-        let mut lifted = Vec::new();
-        take_lists(&mut li.children, &mut lifted);
-        items.push(Node::Element(li));
-        for mut inner in lifted {
-            moved = true;
-            flatten_items(&mut inner);
-            items.extend(inner.children);
-        }
-    }
-    list.children = items;
-    moved
-}
-
-/// Removes every list from `nodes`, at any depth, into `out`.
-fn take_lists(nodes: &mut Vec<Node>, out: &mut Vec<Element>) {
-    let mut kept = Vec::with_capacity(nodes.len());
-    for node in std::mem::take(nodes) {
-        match node {
-            Node::Element(el) if is_list(&el) => out.push(el),
-            Node::Element(mut el) => {
-                take_lists(&mut el.children, out);
-                kept.push(Node::Element(el));
-            }
-            other => kept.push(other),
-        }
-    }
-    *nodes = kept;
 }

@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3"
+note = "A table with role presentation is unwrapped."
+mode = "export"

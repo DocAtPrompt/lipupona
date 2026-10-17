@@ -9,6 +9,7 @@ repository = "https://github.com/DocAtPrompt/lipupona"
 
 [dependencies]
 lipupona = { path = "../.." }
+lipupona-convert = { path = "../common" }
 pulldown-cmark = { version = "0.13.4", default-features = false }
 
 [[test]]

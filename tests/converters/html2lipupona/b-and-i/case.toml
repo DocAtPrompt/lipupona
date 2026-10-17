@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3"
+note = "b and i become strong and em."
+mode = "export"

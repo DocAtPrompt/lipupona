@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3"
+note = "An id that a link of the document points to stays."
+mode = "export"

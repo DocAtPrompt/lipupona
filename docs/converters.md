@@ -1,7 +1,8 @@
 # Converters — work plan
 
-**Status: steps 1 and 2 of §5 are built** (`converters/md2lipupona`,
-flavours `commonmark`, `gfm` and `obsidian`); html2lipupona is planned. **Informative, not part of the
+**Status: steps 1 to 3 of §5 are built** (`converters/md2lipupona`,
+flavours `commonmark`, `gfm` and `obsidian`; `converters/html2lipupona`,
+mode *export*); mode *article* is planned. **Informative, not part of the
 format.** The converters use the core library (reader, writer,
 canonicaliser). Nothing here changes `SPEC.md`.
 
@@ -185,7 +186,7 @@ is a starting point to be adapted, not copied.
 | `aside` | **not** a callout; in *article* mode stripped as a sidebar, in *export* mode unwrapped | `stripped-region` / `dropped-element` |
 | layout table (one cell, nested tables, `role="presentation"`, no header and mostly blocks) | unwrapped | `layout-table-unwrapped` |
 | data table | `table` with `colspan`/`rowspan`; first row of `th` cells becomes `thead` | — |
-| `dl` | a two-column table | `definition-list-as-table` |
+| `dl` | `dl` (in the profile since 2026-10-18, SPEC §5.6.1) | — |
 | `figure`, `figcaption`, `img` | kept | `image-not-local` |
 | `iframe`, `video`, `audio`, `embed`, `object` | a link to the source | `embed-as-link` |
 | `form` and its controls | dropped | `dropped-element` |
@@ -194,6 +195,55 @@ is a starting point to be adapted, not copied.
 
 Meaning that lives only in colour or position — a warning set in red — is
 **not guessed**. It is reported (`dropped-style`), and the author decides.
+
+**Decisions for *export* mode** (2026-10-18), where the table leaves a
+choice; the user decided `u`, `dl`, `aside` and ids, the rest is proposed
+here for review:
+
+- **`u`** keeps its text, `dropped-element` (no meaning is guessed).
+- **`aside`** is never a callout, also with a class like `note`: unwrapped,
+  `dropped-element`. A class of a foreign site is not a callout type.
+- **ids** stay on a block that a link of the same document points to
+  (`href="#…"`); all other ids, and ids on inline elements, are dropped.
+- **Sectioning** (`section`, `article`, `main`, `header`, `footer`, `nav`,
+  `hgroup`, `address`) and `div` and `span` without meaning are always
+  unwrapped, never turned into a `div`: what needs grouping is the author's
+  call. Not reported.
+- **Meaning in style**, as Google Docs exports it: `font-weight` bold or
+  600 and above is `strong`, `font-style: italic` is `em`, a
+  `line-through` decoration is `s`, `vertical-align: super`/`sub` is
+  `sup`/`sub`. A `b` or `strong` whose style says `font-weight: normal`
+  (Google Docs wraps whole documents in one) is unwrapped.
+- **Code** in `pre` loses its `code` (C8); a class `language-x` or `lang-x`
+  on it becomes the class `x` of the `pre`.
+- **Images.** An absolute source is treated as in md2lipupona: a link to
+  it with the alt text, `image-not-local`. A `data:` source cannot be
+  linked usefully: the alt text stays, and the report keeps the source.
+- **Links** without `href`, or with a `javascript:` one, are unwrapped:
+  `dropped-attribute`. An inline element that holds blocks (a link around a
+  card) is unwrapped around them: `dropped-element`.
+- **Forms**: `form`, `fieldset` and `label` are unwrapped; the controls
+  (`input`, `button`, `select`, `textarea`, `option`) are dropped:
+  `dropped-element`.
+- **Text** directly in `body` or in an unwrapped container becomes a
+  paragraph; runs of two or more `br` split paragraphs.
+- **Paragraphs in items and cells.** The first paragraph of a list item or
+  definition leads (as in md2lipupona), and a cell's only paragraph is its
+  phrasing: Word puts a `p` into every cell, Google Docs into every item.
+  For telling a layout table from a data table, such a cell holds no
+  blocks.
+- **Anything else** outside the profile is unwrapped, its text kept:
+  `dropped-element`.
+- **Never content** (`script`, `style`, `meta`, `link`, `noscript`,
+  `template`, comments, the head) is removed without a report.
+- **The head**: `title` and the `lang` of `html` are returned as values.
+- **Summaries.** `dropped-element`, `dropped-attribute` and `dropped-style`
+  are reported once per element, attribute or style property name, with a
+  count; every other code once per occurrence. Attributes and styles are
+  reported only on elements that are kept: an unwrapped element's go with
+  it.
+- HTML that is already lipupona's own — a document of the profile — is not
+  for this converter: `canon` reads it as it is.
 
 ### 3.3 Article mode, step 1: structural removal
 
@@ -242,7 +292,6 @@ Shared with the diagnostics of SPEC §9.3, plus:
 | `dropped-style` | a style removed; meaning may have been in it |
 | `stripped-region` | a region removed as navigation, advert, sidebar, comments; content kept in the report |
 | `layout-table-unwrapped` | a table used for layout was unwrapped |
-| `definition-list-as-table` | a `dl` became a two-column table |
 | `embed-as-link` | an embedded object became a link |
 | `alignment-dropped` | table column alignment from Markdown not kept |
 | `list-depth-reduced` | list items below the profile's list depth moved up into its deepest level |
@@ -265,8 +314,5 @@ produces documents that satisfy L1–L4 of the specification.
 
 ## 6 · Open for review
 
-- `u` (underline): dropped with its text kept, or a class? It is not in the
-  reference profile.
-- `dl` as a two-column table, or a reason to add `dl` to a profile?
-- Whether `aside` from foreign HTML should ever become a callout (for
-  example `aside class="note"` from a documentation site).
+- (The questions on `u`, `dl` and `aside` were decided on 2026-10-18; see
+  §3.2.)

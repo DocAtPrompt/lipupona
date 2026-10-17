@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3"
+note = "An image with a data source keeps its alt text; the report keeps the source."
+mode = "export"

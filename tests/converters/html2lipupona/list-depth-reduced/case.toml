@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3"
+note = "Lists deeper than the profile are flattened into its deepest level."
+mode = "export"

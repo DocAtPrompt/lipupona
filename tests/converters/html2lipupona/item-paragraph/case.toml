@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3"
+note = "The first paragraph of a list item leads."
+mode = "export"

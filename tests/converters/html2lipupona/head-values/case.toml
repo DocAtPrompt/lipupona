@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3"
+note = "The title and the language of the document are returned as values."
+mode = "export"

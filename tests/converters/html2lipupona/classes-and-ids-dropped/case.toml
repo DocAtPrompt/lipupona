@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3"
+note = "Classes and ids are dropped, reported once per name."
+mode = "export"

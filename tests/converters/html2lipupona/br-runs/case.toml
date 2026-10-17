@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3"
+note = "A run of two br splits a paragraph."
+mode = "export"
