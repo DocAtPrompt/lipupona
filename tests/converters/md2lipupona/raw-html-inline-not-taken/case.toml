@@ -1,0 +1,3 @@
+kind = "conversion"
+section = "2"
+note = "Inline HTML outside the profile stays literal text and is reported once."

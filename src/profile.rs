@@ -79,6 +79,19 @@ impl Profile {
         self.grid_columns
     }
 
+    /// The deepest list level.
+    pub fn list_depth(&self) -> usize {
+        self.list_depth
+    }
+
+    /// The level of the deepest heading, 4 for `h4`.
+    pub fn deepest_heading(&self) -> usize {
+        (1..=6)
+            .take_while(|n| self.element(&format!("h{n}")).is_some())
+            .last()
+            .unwrap_or(0)
+    }
+
     pub(crate) fn element(&self, name: &str) -> Option<(Kind, Model)> {
         use Kind::*;
         use Model::*;

@@ -1,0 +1,3 @@
+kind = "conversion"
+section = "2"
+note = "In a loose list the first paragraph of an item is unwrapped."

@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "2"
+note = "A table maps to table, its header row to thead."
+flavour = "gfm"

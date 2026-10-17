@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "2"
+note = "Column alignment is dropped and reported once per table."
+flavour = "gfm"

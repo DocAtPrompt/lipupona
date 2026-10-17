@@ -17,3 +17,7 @@ unicode-segmentation = "1.13"
 [[test]]
 name = "suite"
 harness = false
+
+[workspace]
+members = ["converters/md2lipupona"]
+default-members = [".", "converters/md2lipupona"]

@@ -13,9 +13,11 @@ One directory per case:
 tests/<area>/<case>/
   input.txt          notation as typed                      (kinds tolerance, diagnostic)
   input.html         HTML as found in a file                (kinds canonical, passthrough, diagnostic)
+  input.md           Markdown as found in a file            (kind conversion)
   expected.html      canonical body fragment                (kinds roundtrip, tolerance, canonical)
   display.txt        canonical notation of expected.html    (kinds roundtrip, tolerance)
   diagnostics.txt    expected diagnostic codes, one per line (optional)
+  report.txt         expected report codes, one per line    (kind conversion, optional)
   case.toml          kind, profile, spec section, note      (required)
 ```
 
@@ -32,10 +34,16 @@ tests/<area>/<case>/
 | `canonical` | `canon(input.html) == expected.html` and `canon(expected.html) == expected.html` (C1–C14, L4) |
 | `passthrough` | `canon(input.html) == input.html`, byte for byte, with the listed diagnostics (L5, L6) |
 | `diagnostic` | reading the one input file (`input.txt` or `input.html`) reports the listed diagnostics |
+| `conversion` | the converter turns `input.md` into `expected.html` with the codes of `report.txt`; `expected.html` is canonical (`canon` returns it unchanged and reports nothing outside the profile) and satisfies L1 |
 
 In every kind the diagnostics reported must be exactly those listed in
 `diagnostics.txt`, in any order, each as often as listed. A case without
-`diagnostics.txt` expects none.
+`diagnostics.txt` expects none. The same holds for a converter's report and
+`report.txt`.
+
+Converter cases live in `tests/converters/<tool>/<case>/` (for example
+`tests/converters/md2lipupona/soft-line-break/`) and are run by the
+converter's own runner; `docs/converters.md` is their specification.
 
 ## Conventions
 
@@ -49,8 +57,10 @@ In every kind the diagnostics reported must be exactly those listed in
   convert line ends under `tests/` (`.gitattributes`).
 - `expected.html` contains `body` content only, no `body` tag.
 - `case.toml` keys: `kind`, `profile` (default `reference`), `section`
-  (e.g. `"5.5.2"`), `note` (one sentence: what the case is about), `raw`
-  (default `false`).
+  (e.g. `"5.5.2"`; for a converter case the section of `docs/converters.md`),
+  `note` (one sentence: what the case is about), `raw` (default `false`),
+  `flavour` (converter cases of md2lipupona: `commonmark`, the default, or
+  `gfm`).
 - Implementation-specific names use `test`: the island marker is
   `data-test-rendered`, reserved attributes are `data-test-*`. A runner
   substitutes its own name.

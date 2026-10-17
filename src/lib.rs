@@ -38,6 +38,19 @@ pub fn html(notation: &str) -> Output {
     notation::html(notation, &Profile::reference(IMPLEMENTATION))
 }
 
+/// Stores a tree that a caller built, such as a converter, under the
+/// reference profile: canonical HTML, with what breaks the profile. The
+/// result ends with one line feed.
+pub fn store(nodes: Vec<dom::Node>) -> Output {
+    canon::store(nodes, &Profile::reference(IMPLEMENTATION))
+}
+
+/// What in `nodes` breaks the reference profile, for nodes that stand in
+/// `body` or, with `phrasing`, in a paragraph.
+pub fn check(nodes: &[dom::Node], phrasing: bool) -> Vec<Diagnostic> {
+    Profile::reference(IMPLEMENTATION).diagnose(nodes, phrasing)
+}
+
 /// The display of HTML under the reference profile: its one canonical
 /// notation. The result ends with one line feed.
 pub fn display(html: &str) -> Output {

@@ -1,0 +1,3 @@
+kind = "conversion"
+section = "2"
+note = "An image with a relative source maps to img."

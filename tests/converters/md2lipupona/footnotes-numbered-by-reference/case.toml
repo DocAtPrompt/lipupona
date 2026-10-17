@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "2"
+note = "Footnotes are numbered in the order of their first reference."
+flavour = "gfm"

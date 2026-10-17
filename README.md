@@ -88,7 +88,8 @@ Version 0.2.0, a draft for review.
 - [`profiles/reference.md`](profiles/reference.md) — the reference profile
 - [`tests/`](tests/) — the test suite, 342 cases in a language-neutral format
 - [`docs/converters.md`](docs/converters.md) — work plan for md2lipupona and
-  html2lipupona
+  html2lipupona; [`converters/md2lipupona`](converters/md2lipupona) converts
+  CommonMark and GFM, with a report of every loss
 - [`docs/ports.md`](docs/ports.md) — plan for bindings and ports, and the
   constraints on the core that keep them possible
 - `src/` — the reference implementation in Rust: `canon`, `html` (reading

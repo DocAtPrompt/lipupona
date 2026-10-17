@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "2"
+note = "A footnote becomes a numbered superscript link and an item of the footnote list."
+flavour = "gfm"

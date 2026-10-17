@@ -17,24 +17,16 @@ pub fn html(notation: &str, profile: &Profile) -> Output {
     let text = crate::html::lf(notation.strip_prefix('\u{feff}').unwrap_or(notation));
     let lines: Vec<String> = text.split('\n').map(str::to_string).collect();
     let mut reader = block::Reader::new(profile);
-    let mut nodes = reader.blocks(&lines, false);
+    let nodes = reader.blocks(&lines, false);
+    let mut out = canon::store(nodes, profile);
     let mut diagnostics = reader.diags;
-    diagnostics.extend(profile.diagnose(&nodes, false));
-    canon::normalize(&mut nodes, profile);
-    // The document is the HTML: what an HTML parser makes of the tree is
-    // what was written. A tree no parser builds — an `li` directly in an
-    // `li` — is stored as a parser reads it back.
-    let text = canon::serialize(&nodes, profile);
-    let (nodes, back) = canon::read(&text, profile);
-    // Typed HTML can take the tree past the cap that the reader keeps.
     let too_deep = crate::html::too_deep();
-    if back.contains(&too_deep) && !diagnostics.contains(&too_deep) {
-        diagnostics.push(too_deep);
+    if diagnostics.contains(&too_deep) {
+        out.diagnostics.retain(|d| *d != too_deep);
     }
-    Output {
-        text: canon::serialize(&nodes, profile),
-        diagnostics,
-    }
+    diagnostics.append(&mut out.diagnostics);
+    out.diagnostics = diagnostics;
+    out
 }
 
 /// Reads HTML and writes its display, the one canonical notation

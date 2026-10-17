@@ -1,8 +1,9 @@
 # Converters — work plan
 
-**Status: planned. Informative, not part of the format.** The converters are
-built after the core library (reader, writer, canonicaliser) and use its
-writer. Nothing here changes `SPEC.md`.
+**Status: step 1 of §5 is built** (`converters/md2lipupona`, flavours
+`commonmark` and `gfm`); the rest is planned. **Informative, not part of the
+format.** The converters use the core library (reader, writer,
+canonicaliser). Nothing here changes `SPEC.md`.
 
 Two tools:
 
@@ -77,6 +78,40 @@ application (such as konsona) can call them and show their report.
 | raw HTML inside Markdown | through html2lipupona, mode *export* | as html2lipupona reports |
 | hard line break | `br` | — |
 | horizontal rule | `hr` | — |
+
+**Decisions for `commonmark` and `gfm`** (2026-10-17), where the table
+above leaves a choice:
+
+- **Line breaks.** A soft line break is a space, as CommonMark renders it;
+  a hard one is `br`.
+- **Code blocks.** The info string's words become the classes of `pre`, as
+  the notation reads a fence (SPEC §5.10); the content loses its final line
+  end.
+- **Titles.** `[text](url "title")` and image titles are dropped
+  (`title` is not in the profile): `dropped-attribute`.
+- **Images outside the document.** An image whose source is absolute — a
+  scheme or a leading `/`, which the profile does not allow in `src` —
+  becomes a link to that source with the alt text as its text:
+  `image-not-local`. Inside a link, only the alt text is kept, since links
+  do not nest. Downloading the image stays the caller's decision.
+- **Lists deeper than the profile.** Items below the profile's list depth
+  move up into its deepest level, in document order, after the item they
+  stood in: `list-depth-reduced`, once per top-level list.
+- **Raw HTML**, until html2lipupona exists, follows the rule for typed HTML
+  (SPEC §6): an inline start tag of a profile element with profile
+  attributes opens that element, its end tag closes it, and Markdown between
+  them is read; an HTML block is taken if it is a fragment of profile
+  elements. Anything else stays literal text: `html-not-taken`. Comments
+  are kept as comments.
+- **Footnotes** are numbered in the order of their first reference;
+  definitions without a reference follow, numbered on. There are no back
+  links.
+- **Autolinks.** `<https://…>` and `<a@b.org>` (CommonMark) become links;
+  GFM's bare `www.` autolinks are not recognised by the parser and stay
+  text.
+- **Alignment** of table columns is reported once per table.
+- **The report** is a list of entries, each a stable code and a short
+  message. Cases list the codes, one per line, like `diagnostics.txt`.
 
 **Template:** the author's earlier Markdown importer (konsona-2, not public)
 already covers most of the Obsidian flavour and has its own loss report. It
@@ -170,6 +205,7 @@ Shared with the diagnostics of SPEC §9.3, plus:
 | `definition-list-as-table` | a `dl` became a two-column table |
 | `embed-as-link` | an embedded object became a link |
 | `alignment-dropped` | table column alignment from Markdown not kept |
+| `list-depth-reduced` | list items below the profile's list depth moved up into its deepest level |
 | `image-not-local` | an image points outside the document's folder |
 | `unresolved-link` | a link the resolver could not resolve |
 

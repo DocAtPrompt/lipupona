@@ -1,0 +1,3 @@
+| Präparat | Dosis |
+|---|---|
+| Eisensulfat | 100 mg |

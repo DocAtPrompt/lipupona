@@ -1,0 +1,3 @@
+kind = "conversion"
+section = "2"
+note = "ATX headings one to four keep their level."

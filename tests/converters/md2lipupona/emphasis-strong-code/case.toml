@@ -1,0 +1,3 @@
+kind = "conversion"
+section = "2"
+note = "Emphasis, strong emphasis and code spans map to em, strong and code."

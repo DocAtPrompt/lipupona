@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "2"
+note = "A footnote definition without a reference is kept after the others."
+flavour = "gfm"

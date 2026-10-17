@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "2"
+note = "Task list items carry the classes task and done."
+flavour = "gfm"

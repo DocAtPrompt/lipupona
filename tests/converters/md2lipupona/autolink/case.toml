@@ -1,0 +1,3 @@
+kind = "conversion"
+section = "2"
+note = "An autolink is a link with its address as text."

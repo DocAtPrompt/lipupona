@@ -1,0 +1,3 @@
+kind = "conversion"
+section = "2"
+note = "A link title is dropped and reported."

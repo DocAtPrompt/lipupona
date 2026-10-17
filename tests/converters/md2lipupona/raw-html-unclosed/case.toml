@@ -1,0 +1,3 @@
+kind = "conversion"
+section = "2"
+note = "An inline start tag without its end tag stays literal text."

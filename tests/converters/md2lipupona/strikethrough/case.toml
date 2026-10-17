@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "2"
+note = "Strikethrough maps to s."
+flavour = "gfm"

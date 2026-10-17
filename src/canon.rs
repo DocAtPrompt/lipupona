@@ -42,6 +42,27 @@ fn report_comments(nodes: &[Node], out: &mut Vec<Diagnostic>) {
 
 /// Brings a tree that is inside the profile into canonical shape: attributes
 /// (C3, C10–C12), Unicode NFC (C3) and whitespace (C7).
+/// Stores a tree that was built rather than read from stored bytes — from
+/// notation, or by a converter: normalised, reported against the profile
+/// and serialised. The document is the HTML: what an HTML parser makes of
+/// the tree is what is stored (SPEC §3.4), so a tree no parser builds — an
+/// `li` directly in an `li` — is stored as a parser reads it back.
+pub fn store(mut nodes: Vec<Node>, profile: &Profile) -> Output {
+    let mut diagnostics = profile.diagnose(&nodes, false);
+    normalize(&mut nodes, profile);
+    let text = serialize(&nodes, profile);
+    let (nodes, back) = read(&text, profile);
+    // Typed HTML can take a tree past the nesting cap (§3.4).
+    let too_deep = crate::html::too_deep();
+    if back.contains(&too_deep) && !diagnostics.contains(&too_deep) {
+        diagnostics.push(too_deep);
+    }
+    Output {
+        text: serialize(&nodes, profile),
+        diagnostics,
+    }
+}
+
 pub fn normalize(nodes: &mut Vec<Node>, profile: &Profile) {
     for node in nodes.iter_mut() {
         normalize_values(node);
