@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "2"
+note = "An open folding callout without a title is titled with its type."
+flavour = "obsidian"

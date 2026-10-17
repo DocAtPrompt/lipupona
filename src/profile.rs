@@ -132,6 +132,74 @@ impl Profile {
         }
     }
 
+    /// A callout of type `kind` (SPEC §7.2) holding `content` (blocks), with
+    /// its title (phrasing) and folding: `-` folded, `+` open. A folding
+    /// callout without a title is titled with its type. An unregistered type
+    /// is kept and reported (§7.4).
+    pub fn callout(
+        &self,
+        kind: &str,
+        fold: Option<char>,
+        title: Option<Vec<Node>>,
+        content: Vec<Node>,
+    ) -> (Node, Option<Diagnostic>) {
+        let weight = self.weight(kind);
+        let diag = weight
+            .is_none()
+            .then(|| Diagnostic::new(Code::UnregisteredCallout, format!("callout type {kind}")));
+        let el = |name: &str, attrs: Vec<(&str, String)>, children: Vec<Node>| Element {
+            name: name.to_string(),
+            attrs: attrs
+                .into_iter()
+                .map(|(name, value)| crate::dom::Attr {
+                    name: name.to_string(),
+                    value,
+                })
+                .collect(),
+            children,
+            span: 0..0,
+            implied_end: false,
+        };
+        let mut children = Vec::new();
+        let name = match fold {
+            Some(_) => {
+                let title = title.unwrap_or_else(|| {
+                    let mut c = kind.chars();
+                    let cap: String = match c.next() {
+                        Some(f) => f.to_uppercase().chain(c).collect(),
+                        None => String::new(),
+                    };
+                    vec![Node::Text(crate::dom::Text {
+                        text: cap,
+                        span: 0..0,
+                    })]
+                });
+                children.push(Node::Element(el("summary", Vec::new(), title)));
+                "details"
+            }
+            None => {
+                if let Some(title) = title {
+                    let p = el("p", vec![("class", "title".to_string())], title);
+                    children.push(Node::Element(p));
+                }
+                if weight == Some(Weight::Core) {
+                    "div"
+                } else {
+                    "aside"
+                }
+            }
+        };
+        children.extend(content);
+        let mut attrs = vec![("class", format!("callout {kind}"))];
+        if name == "div" {
+            attrs.push(("role", "note".to_string()));
+        }
+        if fold == Some('+') {
+            attrs.push(("open", String::new()));
+        }
+        (Node::Element(el(name, attrs, children)), diag)
+    }
+
     pub(crate) fn weight(&self, callout_type: &str) -> Option<Weight> {
         self.callouts
             .iter()

@@ -1,0 +1,5 @@
+title: Eisenmangel
+created: 2026-10-17
+aliases: Eisenmangelanämie
+tags: eisen, labor, anämie
+publish: true

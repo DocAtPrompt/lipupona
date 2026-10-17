@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "2"
+note = "A callout in a list item stays a blockquote and is reported."
+flavour = "obsidian"

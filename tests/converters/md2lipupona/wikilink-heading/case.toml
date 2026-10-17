@@ -1,0 +1,5 @@
+kind = "conversion"
+section = "2"
+note = "The resolver gets the target with its heading as written."
+flavour = "obsidian"
+resolve = "pages"

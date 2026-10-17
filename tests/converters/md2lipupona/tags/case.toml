@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "2"
+note = "Tags stay in the text and are returned as values."
+flavour = "obsidian"

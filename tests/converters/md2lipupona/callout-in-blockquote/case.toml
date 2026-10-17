@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "2"
+note = "A blockquote is a structure: a callout in it stays a blockquote."
+flavour = "obsidian"

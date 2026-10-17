@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "2"
+note = "A callout of core weight with a title."
+flavour = "obsidian"

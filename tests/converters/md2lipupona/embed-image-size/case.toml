@@ -1,0 +1,5 @@
+kind = "conversion"
+section = "2"
+note = "A size in place of an alias is dropped and reported."
+flavour = "obsidian"
+resolve = "pages"

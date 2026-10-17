@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "2"
+note = "Without a resolver an embed stays literal text and is reported."
+flavour = "obsidian"

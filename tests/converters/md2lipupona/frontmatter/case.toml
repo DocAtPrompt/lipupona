@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "2"
+note = "Frontmatter is returned as values, unknown keys are reported."
+flavour = "obsidian"

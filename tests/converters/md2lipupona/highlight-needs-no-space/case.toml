@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "2"
+note = "An == followed by a space opens nothing."
+flavour = "obsidian"

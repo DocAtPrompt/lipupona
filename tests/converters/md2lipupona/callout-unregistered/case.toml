@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "2"
+note = "A callout type outside the registry is kept and reported."
+flavour = "obsidian"

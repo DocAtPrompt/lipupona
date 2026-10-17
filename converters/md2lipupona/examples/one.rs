@@ -1,15 +1,16 @@
 //! Converts one Markdown file and prints the HTML and the report.
 //!
-//! `cargo run -p md2lipupona --example one -- page.md [commonmark|gfm]`
+//! `cargo run -p md2lipupona --example one -- page.md [commonmark|gfm|obsidian]`
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let Some(path) = args.first() else {
-        eprintln!("usage: one <file.md> [commonmark|gfm]");
+        eprintln!("usage: one <file.md> [commonmark|gfm|obsidian]");
         return;
     };
     let flavour = match args.get(1).map(String::as_str) {
         Some("gfm") => md2lipupona::Flavour::Gfm,
+        Some("obsidian") => md2lipupona::Flavour::Obsidian,
         _ => md2lipupona::Flavour::CommonMark,
     };
     let md = match std::fs::read_to_string(path) {

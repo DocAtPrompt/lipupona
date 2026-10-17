@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "2"
+note = "A folding callout is details with its title as summary."
+flavour = "obsidian"

@@ -1,0 +1,5 @@
+kind = "conversion"
+section = "2"
+note = "A wikilink goes through the resolver."
+flavour = "obsidian"
+resolve = "pages"

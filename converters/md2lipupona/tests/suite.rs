@@ -8,7 +8,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use md2lipupona::{Flavour, convert};
+use md2lipupona::{Flavour, Meta, Settings, convert_with};
 
 fn main() -> ExitCode {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/converters/md2lipupona");
@@ -43,6 +43,7 @@ fn run(dir: &Path) -> Result<(), String> {
     let toml = file(dir, "case.toml")?;
     let mut kind = None;
     let mut flavour = Flavour::CommonMark;
+    let mut pages = false;
     for line in toml.lines() {
         let Some((key, value)) = line.split_once('=') else {
             continue;
@@ -54,9 +55,12 @@ fn run(dir: &Path) -> Result<(), String> {
                 flavour = match value {
                     "commonmark" => Flavour::CommonMark,
                     "gfm" => Flavour::Gfm,
+                    "obsidian" => Flavour::Obsidian,
                     other => return Err(format!("unknown flavour {other}")),
                 }
             }
+            "resolve" if value == "pages" => pages = true,
+            "resolve" => return Err(format!("unknown resolver {value}")),
             _ => {}
         }
     }
@@ -65,7 +69,12 @@ fn run(dir: &Path) -> Result<(), String> {
     }
     let input = file(dir, "input.md")?;
     let expected = file(dir, "expected.html")?;
-    let out = convert(&input, flavour);
+    let resolve = |target: &str| resolve_pages(target);
+    let settings = Settings {
+        flavour,
+        resolve: pages.then_some(&resolve as &dyn Fn(&str) -> Option<String>),
+    };
+    let out = convert_with(&input, &settings);
     same(
         "convert(input.md)",
         &expected,
@@ -94,6 +103,12 @@ fn run(dir: &Path) -> Result<(), String> {
         ));
     }
 
+    let want_meta = match dir.join("meta.txt").exists() {
+        true => file(dir, "meta.txt")?,
+        false => String::new(),
+    };
+    same("meta", &want_meta, &meta_lines(&out.meta))?;
+
     // expected.html is canonical, in the profile, and keeps L1.
     let canon = lipupona::canon(&expected);
     same(
@@ -111,6 +126,50 @@ fn run(dir: &Path) -> Result<(), String> {
         &expected,
         back.trim_end_matches('\n'),
     )
+}
+
+/// The resolver `pages` of `tests/README.md`.
+fn resolve_pages(target: &str) -> Option<String> {
+    if target.contains('?') {
+        return None;
+    }
+    let (page, anchor) = match target.split_once('#') {
+        Some((p, a)) => (p, Some(a)),
+        None => (target, None),
+    };
+    let mut href = match page.contains('.') {
+        true => page.to_string(),
+        false => format!("{}.html", page.to_lowercase()),
+    };
+    if let Some(a) = anchor {
+        href.push('#');
+        href.push_str(a);
+    }
+    Some(href)
+}
+
+/// The values for the head as `meta.txt` writes them.
+fn meta_lines(meta: &Meta) -> String {
+    let mut lines = Vec::new();
+    for (key, value) in [
+        ("title", &meta.title),
+        ("lang", &meta.lang),
+        ("created", &meta.created),
+        ("source", &meta.source),
+    ] {
+        if let Some(v) = value {
+            lines.push(format!("{key}: {v}"));
+        }
+    }
+    for (key, list) in [("aliases", &meta.aliases), ("tags", &meta.tags)] {
+        if !list.is_empty() {
+            lines.push(format!("{key}: {}", list.join(", ")));
+        }
+    }
+    for (key, value) in &meta.other {
+        lines.push(format!("{key}: {value}"));
+    }
+    lines.join("\n")
 }
 
 /// A file's content without its final line feed.

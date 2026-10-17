@@ -7,7 +7,10 @@
 //!
 //! Like the core, the converter does no IO: text in, HTML and report out.
 
+mod obsidian;
+
 use std::collections::HashMap;
+use std::ops::Range;
 
 use lipupona::dom::{Attr, Comment, Element, Node, Text};
 use lipupona::{Code, Profile};
@@ -22,6 +25,39 @@ pub enum Flavour {
     /// CommonMark with GitHub's tables, strikethrough, task lists and
     /// footnotes.
     Gfm,
+    /// `Gfm` with Obsidian's wikilinks and embeds, highlights, callouts,
+    /// tags, frontmatter and comments.
+    Obsidian,
+}
+
+/// Finds a link target: for a target as written (`Eisenmangel`,
+/// `Eisenmangel#Dosierung`, `bild.png`) the `href` or `src` of the document
+/// or file, or None when there is none.
+pub type Resolver<'r> = &'r dyn Fn(&str) -> Option<String>;
+
+/// How to convert.
+#[derive(Clone, Copy, Default)]
+pub struct Settings<'r> {
+    pub flavour: Flavour,
+    /// Resolves wikilinks and embeds (flavour `Obsidian`). Without one they
+    /// stay text and are reported.
+    pub resolve: Option<Resolver<'r>>,
+}
+
+/// What belongs in the document's head, for the caller to write
+/// (`docs/converters.md` §1 rule 5).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Meta {
+    pub title: Option<String>,
+    pub lang: Option<String>,
+    pub created: Option<String>,
+    pub source: Option<String>,
+    pub aliases: Vec<String>,
+    /// Tags of the frontmatter and of the text, without `#`, in the order
+    /// of first occurrence.
+    pub tags: Vec<String>,
+    /// Other frontmatter keys with their values as written.
+    pub other: Vec<(String, String)>,
 }
 
 /// One entry of the report: a stable code (`docs/converters.md` §4 or the
@@ -33,28 +69,56 @@ pub struct Entry {
 }
 
 /// The result of a conversion: the body content as canonical HTML (ending
-/// with one line feed) and the report.
+/// with one line feed), the report, and the values for the head.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Conversion {
     pub html: String,
     pub report: Vec<Entry>,
+    pub meta: Meta,
+}
+
+/// Converts Markdown into a lipupona document, without a resolver.
+pub fn convert(markdown: &str, flavour: Flavour) -> Conversion {
+    convert_with(
+        markdown,
+        &Settings {
+            flavour,
+            resolve: None,
+        },
+    )
 }
 
 /// Converts Markdown into a lipupona document.
-pub fn convert(markdown: &str, flavour: Flavour) -> Conversion {
+pub fn convert_with(markdown: &str, settings: &Settings) -> Conversion {
+    let flavour = settings.flavour;
     let mut options = Options::empty();
-    if flavour == Flavour::Gfm {
+    if flavour != Flavour::CommonMark {
         options |= Options::ENABLE_TABLES
             | Options::ENABLE_STRIKETHROUGH
             | Options::ENABLE_TASKLISTS
             | Options::ENABLE_FOOTNOTES;
     }
+    let mut meta = Meta::default();
+    let mut entries = Vec::new();
+    let mut body = markdown;
+    if flavour == Flavour::Obsidian {
+        options |= Options::ENABLE_WIKILINKS;
+        if let Some((yaml, rest)) = obsidian::split_frontmatter(markdown) {
+            obsidian::frontmatter(yaml, &mut meta, &mut entries);
+            body = rest;
+        }
+    }
     let profile = Profile::reference(lipupona::IMPLEMENTATION);
-    let mut b = Builder::new(&profile);
-    for event in Parser::new_ext(markdown, options) {
-        b.event(event);
+    let mut b = Builder::new(&profile, settings, body);
+    b.entries = entries;
+    for (event, range) in Parser::new_ext(body, options).into_offset_iter() {
+        b.event(event, range);
     }
     let mut nodes = b.finish();
+    if flavour == Flavour::Obsidian {
+        obsidian::inline(&mut nodes);
+        obsidian::tags(&nodes, &mut meta.tags);
+    }
     let lists = flatten_lists(&mut nodes, profile.list_depth());
     for _ in 0..lists {
         b.report(
@@ -71,6 +135,7 @@ pub fn convert(markdown: &str, flavour: Flavour) -> Conversion {
     Conversion {
         html: stored.text,
         report: b.entries,
+        meta,
     }
 }
 
@@ -83,6 +148,11 @@ enum Origin {
     Footnote(String),
     /// The alt text of an image: source and title.
     Image(String, String),
+    /// The text of a wikilink: its target and its source as written.
+    Wiki(String, String),
+    /// The alias of an embed: its target, its source as written, and
+    /// whether an alias was given.
+    Embed(String, String, bool),
 }
 
 struct Frame {
@@ -90,8 +160,14 @@ struct Frame {
     origin: Origin,
 }
 
-struct Builder<'p> {
-    profile: &'p Profile,
+struct Builder<'a> {
+    profile: &'a Profile,
+    flavour: Flavour,
+    resolve: Option<Resolver<'a>>,
+    /// The Markdown being read, for the source of what stays as written.
+    source: &'a str,
+    /// The source range of the event being read.
+    range: Range<usize>,
     root: Vec<Node>,
     stack: Vec<Frame>,
     entries: Vec<Entry>,
@@ -148,10 +224,14 @@ fn is_absolute(src: &str) -> bool {
         })
 }
 
-impl<'p> Builder<'p> {
-    fn new(profile: &'p Profile) -> Self {
+impl<'a> Builder<'a> {
+    fn new(profile: &'a Profile, settings: &Settings<'a>, source: &'a str) -> Self {
         Builder {
             profile,
+            flavour: settings.flavour,
+            resolve: settings.resolve,
+            source,
+            range: 0..0,
             root: Vec::new(),
             stack: Vec::new(),
             entries: Vec::new(),
@@ -226,6 +306,13 @@ impl<'p> Builder<'p> {
         match frame.origin {
             Origin::Footnote(label) => self.notes.push((label, frame.el.children)),
             Origin::Image(src, title) => self.image(frame.el, src, title),
+            Origin::Wiki(target, written) => self.wikilink(frame.el, &target, written),
+            Origin::Embed(target, written, alias) => self.embed(frame.el, &target, written, alias),
+            Origin::Markdown
+                if frame.el.name == "blockquote" && self.flavour == Flavour::Obsidian =>
+            {
+                self.blockquote(frame.el)
+            }
             _ => self.push(Node::Element(frame.el)),
         }
     }
@@ -251,6 +338,103 @@ impl<'p> Builder<'p> {
         self.stack.iter().any(|f| f.el.name == "a")
     }
 
+    /// Whether `nodes` keep the profile where they would stand: checked in
+    /// the elements open around them (a container in a list item does not).
+    fn fits(&self, nodes: &[Node]) -> bool {
+        let mut probe = nodes.to_vec();
+        for frame in self.stack.iter().rev() {
+            let mut wrapper = element(&frame.el.name, Vec::new());
+            wrapper.children = probe;
+            probe = vec![Node::Element(wrapper)];
+        }
+        !lipupona::check(&probe, false)
+            .iter()
+            .any(|d| d.code.is_blocking())
+    }
+
+    fn resolved(&self, target: &str) -> Option<String> {
+        self.resolve.and_then(|resolve| resolve(target))
+    }
+
+    /// A wikilink: a link where the resolver finds the target, else the
+    /// wikilink as written.
+    fn wikilink(&mut self, mut el: Element, target: &str, written: String) {
+        match self.resolved(target) {
+            Some(href) => {
+                el.attrs.push(attr("href", href));
+                self.push(Node::Element(el));
+            }
+            None => {
+                self.report("unresolved-link", written.clone());
+                self.push_text(&written);
+            }
+        }
+    }
+
+    /// An embed: an image, or a link to what is embedded.
+    fn embed(&mut self, el: Element, target: &str, written: String, alias: bool) {
+        let Some(src) = self.resolved(target) else {
+            self.report("unresolved-link", written.clone());
+            self.push_text(&written);
+            return;
+        };
+        let alias = alias.then(|| plain_text(&el.children));
+        let page = target.split('#').next().unwrap_or(target);
+        let image = page.rsplit_once('.').is_some_and(|(_, ext)| {
+            ["png", "jpg", "jpeg", "gif", "svg", "webp", "avif", "bmp"]
+                .contains(&ext.to_ascii_lowercase().as_str())
+        });
+        if !image {
+            self.report("embed-as-link", written);
+            let mut a = element("a", vec![attr("href", src)]);
+            a.children
+                .push(text(alias.unwrap_or_else(|| target.to_string())));
+            self.push(Node::Element(a));
+            return;
+        }
+        let name = page.rsplit('/').next().unwrap_or(page).to_string();
+        let is_size = |a: &str| {
+            let mut parts = a.split('x');
+            parts
+                .next()
+                .is_some_and(|w| !w.is_empty() && w.bytes().all(|b| b.is_ascii_digit()))
+                && parts.all(|h| !h.is_empty() && h.bytes().all(|b| b.is_ascii_digit()))
+        };
+        let alt = match alias {
+            Some(a) if is_size(&a) => {
+                self.report(
+                    "dropped-attribute",
+                    format!("size {a} of an embedded image"),
+                );
+                name
+            }
+            Some(a) => a,
+            None => name,
+        };
+        let mut alt_el = element("img", Vec::new());
+        alt_el.children.push(text(alt));
+        self.image(alt_el, src, String::new());
+    }
+
+    /// A blockquote, which in the obsidian flavour may be a callout.
+    fn blockquote(&mut self, quote: Element) {
+        let Some((kind, fold, title, content)) = obsidian::callout(&quote) else {
+            self.push(Node::Element(quote));
+            return;
+        };
+        let (node, diag) = self.profile.callout(&kind, fold, title, content);
+        // A callout may not stand in a structure (SPEC §7.2).
+        if !self.fits(std::slice::from_ref(&node)) {
+            self.report("callout-as-blockquote", format!("[!{kind}]"));
+            self.push(Node::Element(quote));
+            return;
+        }
+        if let Some(d) = diag {
+            self.report(d.code.as_str(), d.message);
+        }
+        self.push(node);
+    }
+
     fn image(&mut self, alt_el: Element, src: String, title: String) {
         let alt = plain_text(&alt_el.children);
         if !title.is_empty() {
@@ -274,7 +458,8 @@ impl<'p> Builder<'p> {
         }
     }
 
-    fn event(&mut self, event: Event) {
+    fn event(&mut self, event: Event, range: Range<usize>) {
+        self.range = range;
         if let Some(code) = &mut self.code {
             match event {
                 Event::Text(t) => code.push_str(&t),
@@ -314,6 +499,10 @@ impl<'p> Builder<'p> {
             }
             Event::InlineHtml(t) | Event::Html(t) => self.inline_html(&t),
             Event::FootnoteReference(label) => self.footnote_reference(&label),
+            // Obsidian shows a line end as a line break.
+            Event::SoftBreak if self.flavour == Flavour::Obsidian => {
+                self.push(Node::Element(element("br", Vec::new())))
+            }
             Event::SoftBreak => self.push_text(" "),
             Event::HardBreak => self.push(Node::Element(element("br", Vec::new()))),
             Event::Rule => self.push(Node::Element(element("hr", Vec::new()))),
@@ -393,6 +582,24 @@ impl<'p> Builder<'p> {
             Tag::Strikethrough => self.open("s", Vec::new()),
             Tag::Superscript => self.open("sup", Vec::new()),
             Tag::Subscript => self.open("sub", Vec::new()),
+            Tag::Link {
+                link_type: LinkType::WikiLink { .. },
+                dest_url,
+                ..
+            } => {
+                let written = self.source[self.range.clone()].to_string();
+                let origin = Origin::Wiki(dest_url.to_string(), written);
+                self.open_with(element("a", Vec::new()), origin);
+            }
+            Tag::Image {
+                link_type: LinkType::WikiLink { has_pothole },
+                dest_url,
+                ..
+            } => {
+                let written = self.source[self.range.clone()].to_string();
+                let origin = Origin::Embed(dest_url.to_string(), written, has_pothole);
+                self.open_with(element("img", Vec::new()), origin);
+            }
             Tag::Link {
                 link_type,
                 dest_url,
@@ -551,17 +758,7 @@ impl<'p> Builder<'p> {
             .into_iter()
             .filter(|n| !n.is_blank_text())
             .collect();
-        // Checked where it stands: a container is not taken into a list item.
-        let mut probe = nodes.clone();
-        for frame in self.stack.iter().rev() {
-            let mut wrapper = element(&frame.el.name, Vec::new());
-            wrapper.children = probe;
-            probe = vec![Node::Element(wrapper)];
-        }
-        let blocked = lipupona::check(&probe, false)
-            .iter()
-            .any(|d| d.code.is_blocking());
-        if !blocked && !nodes.iter().any(|n| matches!(n, Node::Text(_))) {
+        if self.fits(&nodes) && !nodes.iter().any(|n| matches!(n, Node::Text(_))) {
             for node in nodes {
                 self.push(node);
             }

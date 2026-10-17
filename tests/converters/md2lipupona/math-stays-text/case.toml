@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "2"
+note = "Math is not read and stays text."
+flavour = "obsidian"

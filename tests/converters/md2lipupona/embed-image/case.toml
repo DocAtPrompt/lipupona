@@ -1,0 +1,5 @@
+kind = "conversion"
+section = "2"
+note = "An embedded image becomes img, its file name the alt text."
+flavour = "obsidian"
+resolve = "pages"

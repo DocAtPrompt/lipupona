@@ -7,7 +7,7 @@ use super::table;
 use crate::diag::{Code, Diagnostic};
 use crate::dom::{Attr, Element, Node};
 use crate::html;
-use crate::profile::{Kind, Model, Profile, Weight};
+use crate::profile::{Kind, Model, Profile};
 
 pub(crate) struct Reader<'p> {
     pub profile: &'p Profile,
@@ -878,58 +878,13 @@ impl<'p> Reader<'p> {
         title: Option<String>,
         rest: &[String],
     ) -> Node {
-        let weight = self.profile.weight(t);
-        if weight.is_none() {
-            self.diags.push(Diagnostic::new(
-                Code::UnregisteredCallout,
-                format!("callout type {t}"),
-            ));
-        }
-        let class = Attr {
-            name: "class".into(),
-            value: format!("callout {t}"),
-        };
-        let mut children = Vec::new();
-        let name = match fold {
-            Some(_) => {
-                let title = title
-                    .filter(|s| !s.trim_matches(SP).is_empty())
-                    .unwrap_or_else(|| capitalize(t));
-                let title = self.inside(1, |r| r.phrasing(&title));
-                children.push(element("summary", Vec::new(), title));
-                "details"
-            }
-            None => {
-                if let Some(title) = title.filter(|s| !s.trim_matches(SP).is_empty()) {
-                    let title_class = Attr {
-                        name: "class".into(),
-                        value: "title".into(),
-                    };
-                    let title = self.inside(1, |r| r.phrasing(&title));
-                    children.push(element("p", vec![title_class], title));
-                }
-                if weight == Some(Weight::Core) {
-                    "div"
-                } else {
-                    "aside"
-                }
-            }
-        };
-        children.extend(self.blocks(rest, false));
-        let mut attrs = vec![class];
-        if name == "div" {
-            attrs.push(Attr {
-                name: "role".into(),
-                value: "note".into(),
-            });
-        }
-        if fold == Some('+') {
-            attrs.push(Attr {
-                name: "open".into(),
-                value: String::new(),
-            });
-        }
-        element(name, attrs, children)
+        let title = title
+            .filter(|s| !s.trim_matches(SP).is_empty())
+            .map(|title| self.inside(1, |r| r.phrasing(&title)));
+        let content = self.blocks(rest, false);
+        let (node, diag) = self.profile.callout(t, fold, title, content);
+        self.diags.extend(diag);
+        node
     }
 
     /// §5.6: a list at `lines[i]`.
@@ -1011,14 +966,6 @@ impl<'p> Reader<'p> {
             element(if ordered { "ol" } else { "ul" }, attrs, children),
             i,
         )
-    }
-}
-
-fn capitalize(s: &str) -> String {
-    let mut c = s.chars();
-    match c.next() {
-        Some(f) => f.to_uppercase().chain(c).collect(),
-        None => String::new(),
     }
 }
 

@@ -1,0 +1,5 @@
+kind = "conversion"
+section = "2"
+note = "A wikilink the resolver does not find stays literal text and is reported."
+flavour = "obsidian"
+resolve = "pages"

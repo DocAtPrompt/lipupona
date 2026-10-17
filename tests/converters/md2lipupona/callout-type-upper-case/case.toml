@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "2"
+note = "The callout type is read in lower case."
+flavour = "obsidian"

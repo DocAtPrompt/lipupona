@@ -1,0 +1,5 @@
+kind = "conversion"
+section = "2"
+note = "The alias of a wikilink is its text."
+flavour = "obsidian"
+resolve = "pages"

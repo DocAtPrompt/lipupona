@@ -1,0 +1,2 @@
+> [!WARNING]
+> Nicht mit Alkohol.

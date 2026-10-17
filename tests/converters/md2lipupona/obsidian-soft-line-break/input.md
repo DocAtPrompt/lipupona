@@ -1,0 +1,2 @@
+Ferritin niedrig
+Transferrin hoch

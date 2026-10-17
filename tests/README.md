@@ -18,6 +18,7 @@ tests/<area>/<case>/
   display.txt        canonical notation of expected.html    (kinds roundtrip, tolerance)
   diagnostics.txt    expected diagnostic codes, one per line (optional)
   report.txt         expected report codes, one per line    (kind conversion, optional)
+  meta.txt           expected values for the head            (kind conversion, optional)
   case.toml          kind, profile, spec section, note      (required)
 ```
 
@@ -44,6 +45,11 @@ In every kind the diagnostics reported must be exactly those listed in
 Converter cases live in `tests/converters/<tool>/<case>/` (for example
 `tests/converters/md2lipupona/soft-line-break/`) and are run by the
 converter's own runner; `docs/converters.md` is their specification.
+`meta.txt` holds the values a converter returns for the head, one
+`key: value` per line in the order `title`, `lang`, `created`, `source`,
+`aliases`, `tags`, then other keys as they appear; a list is written with
+`, ` between its items, and a key without a value is left out. A case
+without `meta.txt` expects no values.
 
 ## Conventions
 
@@ -59,8 +65,11 @@ converter's own runner; `docs/converters.md` is their specification.
 - `case.toml` keys: `kind`, `profile` (default `reference`), `section`
   (e.g. `"5.5.2"`; for a converter case the section of `docs/converters.md`),
   `note` (one sentence: what the case is about), `raw` (default `false`),
-  `flavour` (converter cases of md2lipupona: `commonmark`, the default, or
-  `gfm`).
+  `flavour` (converter cases of md2lipupona: `commonmark`, the default,
+  `gfm` or `obsidian`), `resolve` (obsidian cases: `pages`, a resolver that
+  finds every target without a `?`, maps `Ziel` to `ziel.html`,
+  `Ziel#Abschnitt` to `ziel.html#Abschnitt` and keeps a name with an
+  extension, `bild.png`, as it is; without the key there is no resolver).
 - Implementation-specific names use `test`: the island marker is
   `data-test-rendered`, reserved attributes are `data-test-*`. A runner
   substitutes its own name.

@@ -1,0 +1,5 @@
+kind = "conversion"
+section = "2"
+note = "The alias of an embedded image is its alt text."
+flavour = "obsidian"
+resolve = "pages"

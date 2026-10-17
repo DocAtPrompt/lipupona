@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "2"
+note = "A number after # is no tag."
+flavour = "obsidian"

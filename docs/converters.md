@@ -1,7 +1,7 @@
 # Converters — work plan
 
-**Status: step 1 of §5 is built** (`converters/md2lipupona`, flavours
-`commonmark` and `gfm`); the rest is planned. **Informative, not part of the
+**Status: steps 1 and 2 of §5 are built** (`converters/md2lipupona`,
+flavours `commonmark`, `gfm` and `obsidian`); html2lipupona is planned. **Informative, not part of the
 format.** The converters use the core library (reader, writer,
 canonicaliser). Nothing here changes `SPEC.md`.
 
@@ -113,6 +113,46 @@ above leaves a choice:
 - **The report** is a list of entries, each a stable code and a short
   message. Cases list the codes, one per line, like `diagnostics.txt`.
 
+**Decisions for `obsidian`** (2026-10-17), on top of `gfm`:
+
+- **Line breaks.** A soft line break is a `br`, as Obsidian shows it (with
+  "strict line breaks" off, its default) and as the notation reads a line
+  end.
+- **Wikilinks** `[[Ziel]]`, `[[Ziel|Text]]`, `[[Ziel#Abschnitt]]`: the
+  resolver gets the target as written (everything before `|`) and returns
+  the `href`; the link text is the alias, else the target. Without a
+  resolver, or when it finds nothing, the wikilink stays literal text as
+  written: `unresolved-link`. Markdown links `[Text](Ziel.md)` stay as
+  written; only wikilinks and embeds go through the resolver.
+- **Embeds** `![[…]]`: an image (by extension: `png jpg jpeg gif svg webp
+  avif bmp`) becomes `img` with the resolved source and, as alt text, the
+  alias, else the file name; an alias that is a size (`300`, `300x200`) is
+  dropped: `dropped-attribute`. A resolved source that is absolute is
+  treated as for Markdown images. Any other embed (a note, a PDF) becomes a
+  link to it: `embed-as-link`. Unresolved: literal text, `unresolved-link`.
+- **Highlight** `==text==` is `mark`, within one run of phrasing: the
+  opening `==` is followed by no whitespace, the closing one follows none,
+  and they pair from left to right at the same level of nesting.
+- **Callouts** `> [!type]`, `> [!type]- Titel`, `> [!type]+ Titel` follow
+  SPEC §7 (the type in lower case); a type outside the registry is kept as
+  SPEC §7.4 says: `unregistered-callout`. A callout where the profile allows
+  none (in a structure: a list item, a table cell, a blockquote — SPEC §7.2,
+  Appendix A) stays a blockquote with its first line as text:
+  `callout-as-blockquote`.
+- **Tags** `#tag` — after the start or whitespace, of letters, digits, `_`,
+  `-` and `/`, not digits alone, outside code and links — stay in the text
+  as written and are also returned as values, without `#`, together with
+  the frontmatter's `tags`, in the order of first occurrence.
+- **Frontmatter** (YAML between `---` lines at the very start) is returned
+  as values: `title`, `lang`, `created`, `source`, `aliases`, `tags`, and
+  every other key with its value as written, which the report lists:
+  `unknown-frontmatter-key`. Flat keys with a scalar or a list are read;
+  anything else is returned as written.
+- **Comments** `%%…%%` within a paragraph become HTML comments, which
+  lipupona keeps hidden as Obsidian does. Comments across blocks stay text.
+- **Not read** (they stay text): math `$…$`, inline footnotes `^[…]`, block
+  references `^id`, task markers other than `x` and space.
+
 **Template:** the author's earlier Markdown importer (konsona-2, not public)
 already covers most of the Obsidian flavour and has its own loss report. It
 is a starting point to be adapted, not copied.
@@ -206,6 +246,8 @@ Shared with the diagnostics of SPEC §9.3, plus:
 | `embed-as-link` | an embedded object became a link |
 | `alignment-dropped` | table column alignment from Markdown not kept |
 | `list-depth-reduced` | list items below the profile's list depth moved up into its deepest level |
+| `callout-as-blockquote` | a callout where the profile allows none kept as a blockquote |
+| `unknown-frontmatter-key` | a frontmatter key that has no place in a head; returned with its value |
 | `image-not-local` | an image points outside the document's folder |
 | `unresolved-link` | a link the resolver could not resolve |
 

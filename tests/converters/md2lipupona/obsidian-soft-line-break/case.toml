@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "2"
+note = "A soft line break is a br, as Obsidian shows it."
+flavour = "obsidian"
