@@ -121,7 +121,7 @@ pub fn convert_with(markdown: &str, settings: &Settings) -> Conversion {
         obsidian::inline(&mut nodes);
         obsidian::tags(&nodes, &mut meta.tags);
     }
-    let lists = flatten_lists(&mut nodes, profile.list_depth());
+    let lists = flatten_lists(&profile, &mut nodes);
     for _ in 0..lists {
         b.report(
             "list-depth-reduced",

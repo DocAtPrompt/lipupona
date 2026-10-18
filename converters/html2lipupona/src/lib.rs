@@ -106,7 +106,7 @@ pub fn convert(html: &str, mode: Mode) -> Conversion {
 /// Flattens lists deeper than the profile and stores the blocks as
 /// canonical HTML, reporting both.
 fn store(profile: &Profile, mut blocks: Vec<Node>, report: &mut Vec<Entry>) -> String {
-    for _ in 0..flatten_lists(&mut blocks, profile.list_depth()) {
+    for _ in 0..flatten_lists(profile, &mut blocks) {
         report.push(Entry::new(
             "list-depth-reduced",
             format!("items below level {} moved up", profile.list_depth()),

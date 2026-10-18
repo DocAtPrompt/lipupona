@@ -103,7 +103,15 @@ above leaves a choice:
   do not nest. Downloading the image stays the caller's decision.
 - **Lists deeper than the profile.** Items below the profile's list depth
   move up into its deepest level, in document order, after the item they
-  stood in: `list-depth-reduced`, once per top-level list.
+  stood in: `list-depth-reduced`, once per top-level list. `ul`, `ol` and
+  `dl` count alike (2026-10-18). The items take the form of the deepest
+  level: below a `ul` or `ol`, each group of a `dl` becomes one `li` —
+  its first term as the lead, further terms and each definition as
+  paragraphs, a definition's blocks after its paragraph; below a `dl`,
+  each `li` becomes a `dd` with its content and attributes, and the terms
+  and definitions of a `dl` stay what they are. An `li` made of a group
+  takes the attributes of its first term; those of the other terms and of
+  the definitions are dropped.
 - **Raw HTML.** An HTML block that is a fragment of profile elements and
   attributes is taken as it is — the rule for typed HTML (SPEC §6) — so what
   the author typed stays, classes included. Any other HTML block goes
@@ -258,6 +266,8 @@ choice:
   `dropped-element`.
 - **Text** directly in `body` or in an unwrapped container becomes a
   paragraph; runs of two or more `br` split paragraphs.
+- **Lists deeper than the profile** are flattened as in md2lipupona (§2):
+  `list-depth-reduced`.
 - **Paragraphs in items and cells.** The first paragraph of a list item or
   definition leads (as in md2lipupona), and a cell's only paragraph is its
   phrasing: Word puts a `p` into every cell, Google Docs into every item.

@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3"
+note = "A group of two terms becomes one list item, the second term a paragraph."
+mode = "export"

@@ -121,17 +121,19 @@ pub fn paragraph_of(run: &mut Vec<Node>, out: &mut Vec<Node>) {
 }
 
 fn is_list(el: &Element) -> bool {
-    matches!(el.name.as_str(), "ul" | "ol")
+    matches!(el.name.as_str(), "ul" | "ol" | "dl")
 }
 
-/// Moves the items of lists below level `max` up into level `max`, after
-/// the item they stood in. Returns how many outermost lists changed.
-pub fn flatten_lists(nodes: &mut [Node], max: usize) -> usize {
+/// Moves the items of lists below the profile's list depth up into its
+/// deepest level, after the item they stood in, in the form of that level
+/// (`docs/converters.md` §2). `ul`, `ol` and `dl` count alike. Returns how
+/// many outermost lists changed.
+pub fn flatten_lists(profile: &Profile, nodes: &mut [Node]) -> usize {
     nodes
         .iter_mut()
         .map(|node| match node {
-            Node::Element(el) if is_list(el) => usize::from(flatten_in(el, 1, max)),
-            Node::Element(el) => flatten_lists(&mut el.children, max),
+            Node::Element(el) if is_list(el) => usize::from(flatten_in(profile, el, 1)),
+            Node::Element(el) => flatten_lists(profile, &mut el.children),
             _ => 0,
         })
         .sum()
@@ -139,47 +141,103 @@ pub fn flatten_lists(nodes: &mut [Node], max: usize) -> usize {
 
 /// Flattens what lies below the list `el` at `level`; whether anything
 /// moved.
-fn flatten_in(el: &mut Element, level: usize, max: usize) -> bool {
-    if level >= max {
-        return flatten_items(el);
+fn flatten_in(profile: &Profile, el: &mut Element, level: usize) -> bool {
+    if level >= profile.list_depth() {
+        return flatten_items(profile, el);
     }
-    fn visit(nodes: &mut [Node], level: usize, max: usize) -> bool {
+    fn visit(profile: &Profile, nodes: &mut [Node], level: usize) -> bool {
         let mut moved = false;
         for node in nodes {
             if let Node::Element(el) = node {
                 moved |= match is_list(el) {
-                    true => flatten_in(el, level + 1, max),
-                    false => visit(&mut el.children, level, max),
+                    true => flatten_in(profile, el, level + 1),
+                    false => visit(profile, &mut el.children, level),
                 };
             }
         }
         moved
     }
-    visit(&mut el.children, level, max)
+    visit(profile, &mut el.children, level)
 }
 
 /// Flattens a list at the deepest level: every list inside one of its items
-/// gives its items, flattened in turn, to follow that item. Whether anything
-/// moved.
-fn flatten_items(list: &mut Element) -> bool {
+/// gives its items, flattened in turn and in the form of this list, to
+/// follow that item. Whether anything moved.
+fn flatten_items(profile: &Profile, list: &mut Element) -> bool {
     let mut moved = false;
     let mut items = Vec::new();
     for node in std::mem::take(&mut list.children) {
-        let Node::Element(mut li) = node else {
+        let Node::Element(mut item) = node else {
             items.push(node);
             continue;
         };
         let mut lifted = Vec::new();
-        take_lists(&mut li.children, &mut lifted);
-        items.push(Node::Element(li));
+        take_lists(&mut item.children, &mut lifted);
+        items.push(Node::Element(item));
         for mut inner in lifted {
             moved = true;
-            flatten_items(&mut inner);
-            items.extend(inner.children);
+            flatten_items(profile, &mut inner);
+            match (list.name == "dl", inner.name == "dl") {
+                (true, false) => items.extend(inner.children.into_iter().map(|node| match node {
+                    Node::Element(mut li) if li.name == "li" => {
+                        li.name = "dd".to_string();
+                        Node::Element(li)
+                    }
+                    other => other,
+                })),
+                (false, true) => items.extend(groups_as_items(profile, inner)),
+                _ => items.extend(inner.children),
+            }
         }
     }
     list.children = items;
     moved
+}
+
+/// The groups of a definition list as list items: the first term leads,
+/// further terms and each definition follow as paragraphs, a definition's
+/// blocks after its paragraph. The item takes the first term's attributes.
+fn groups_as_items(profile: &Profile, dl: Element) -> Vec<Node> {
+    let mut items: Vec<Element> = Vec::new();
+    // Whether the last item has a definition: a term then starts a group.
+    let mut defined = false;
+    for node in dl.children {
+        match node {
+            Node::Element(dt) if dt.name == "dt" => match items.last_mut() {
+                Some(li) if !defined => paragraph_of(&mut { dt.children }, &mut li.children),
+                _ => {
+                    let mut li = element("li", dt.attrs);
+                    li.children = dt.children;
+                    items.push(li);
+                    defined = false;
+                }
+            },
+            Node::Element(dd) if dd.name == "dd" => {
+                if items.is_empty() {
+                    items.push(element("li", Vec::new()));
+                }
+                let li = items.last_mut().expect("an item was pushed");
+                let mut lead = dd.children;
+                let at = lead
+                    .iter()
+                    .position(|n| !is_phrasing(profile, n))
+                    .unwrap_or(lead.len());
+                let blocks = lead.split_off(at);
+                paragraph_of(&mut lead, &mut li.children);
+                li.children.extend(blocks);
+                defined = true;
+            }
+            node if node.is_blank_text() => {}
+            other => match items.last_mut() {
+                Some(li) => li.children.push(other),
+                None => items.push(Element {
+                    children: vec![other],
+                    ..element("li", Vec::new())
+                }),
+            },
+        }
+    }
+    items.into_iter().map(Node::Element).collect()
 }
 
 /// Removes every list from `nodes`, at any depth, into `out`.

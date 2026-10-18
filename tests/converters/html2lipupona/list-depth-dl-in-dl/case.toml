@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3"
+note = "A definition list below the deepest definition list keeps its terms and definitions."
+mode = "export"
