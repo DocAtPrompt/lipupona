@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3.2"
+note = "The page's navigation is stripped and reported with its content."
+mode = "article"

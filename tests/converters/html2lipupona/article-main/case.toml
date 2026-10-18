@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3.2"
+note = "Everything outside the only main element is stripped."
+mode = "article"

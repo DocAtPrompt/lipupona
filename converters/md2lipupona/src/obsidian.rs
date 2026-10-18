@@ -98,10 +98,7 @@ pub(crate) fn frontmatter(yaml: &str, meta: &mut Meta, report: &mut Vec<Entry>) 
                 }
             }
             _ => {
-                report.push(Entry {
-                    code: "unknown-frontmatter-key".into(),
-                    message: key.clone(),
-                });
+                report.push(Entry::new("unknown-frontmatter-key", key.clone()));
                 if let Some(value) = scalar() {
                     meta.other.push((key, value));
                 }

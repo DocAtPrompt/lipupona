@@ -91,7 +91,8 @@ Version 0.2.0, a draft for review.
   html2lipupona; [`converters/md2lipupona`](converters/md2lipupona) converts
   CommonMark, GFM and Obsidian's Markdown,
   [`converters/html2lipupona`](converters/html2lipupona) HTML exported by
-  editors, each with a report of every loss
+  editors and web pages (without their navigation, sidebars and comments),
+  each with a report of every loss
 - [`docs/ports.md`](docs/ports.md) — plan for bindings and ports, and the
   constraints on the core that keep them possible
 - `src/` — the reference implementation in Rust: `canon`, `html` (reading

@@ -31,6 +31,8 @@ options:
   -o, --output <file>   write to <file> instead of standard output
   --flavour <name>      from-md: commonmark (default), gfm or obsidian
   --definition-lists    from-md: read `Term` / `: definition` as a list
+  --article             from-html: a web page to keep; navigation, sidebars,
+                        comments and the like are stripped and reported
   --document            from-md, from-html: write a whole document, its head
                         from the converter's values (title, lang, tags …)
   -h, --help            show this text
@@ -88,6 +90,7 @@ struct Args {
     output: Option<String>,
     flavour: Option<Flavour>,
     definition_lists: bool,
+    article: bool,
     document: bool,
 }
 
@@ -134,6 +137,7 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
         output: None,
         flavour: None,
         definition_lists: false,
+        article: false,
         document: false,
     };
     let mut only_files = false;
@@ -164,6 +168,7 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
             }
             "--document" if inline.is_none() => parsed.document = true,
             "--definition-lists" if inline.is_none() => parsed.definition_lists = true,
+            "--article" if inline.is_none() => parsed.article = true,
             _ => return Err(format!("unknown option `{arg}`")),
         }
     }
@@ -173,6 +178,9 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
     }
     if parsed.definition_lists && command != Command::FromMd {
         return Err(format!("`--definition-lists` is for from-md, not {name}"));
+    }
+    if parsed.article && command != Command::FromHtml {
+        return Err(format!("`--article` is for from-html, not {name}"));
     }
     if parsed.document && !matches!(command, Command::FromMd | Command::FromHtml) {
         return Err(format!(
@@ -383,7 +391,11 @@ fn convert(
             (document::write(&head, &out.html), notes)
         }
         Command::FromHtml => {
-            let out = html2lipupona::convert(src, html2lipupona::Mode::Export);
+            let mode = match args.article {
+                true => html2lipupona::Mode::Article,
+                false => html2lipupona::Mode::Export,
+            };
+            let out = html2lipupona::convert(src, mode);
             let notes = report(&out.report);
             if !args.document {
                 return (out.html, notes);

@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3.2"
+note = "Elements with the roles navigation, search and complementary are stripped."
+mode = "article"

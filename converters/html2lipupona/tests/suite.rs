@@ -56,6 +56,7 @@ fn run(dir: &Path) -> Result<(), String> {
             "mode" => {
                 mode = match value {
                     "export" => Mode::Export,
+                    "article" => Mode::Article,
                     other => return Err(format!("unknown mode {other}")),
                 }
             }
@@ -94,6 +95,15 @@ fn run(dir: &Path) -> Result<(), String> {
             "report differs\n  expected: {want:?}\n  actual:   {got:?}\n  {}",
             details.join("\n  ")
         ));
+    }
+    if dir.join("stripped.html").exists() {
+        let want = file(dir, "stripped.html")?;
+        let got: String = out
+            .report
+            .iter()
+            .filter_map(|e| e.content.as_deref())
+            .collect();
+        same("stripped content", &want, got.trim_end_matches('\n'))?;
     }
     let want_meta = match dir.join("meta.txt").exists() {
         true => file(dir, "meta.txt")?,

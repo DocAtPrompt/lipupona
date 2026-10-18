@@ -208,10 +208,7 @@ impl<'a> Builder<'a> {
     }
 
     fn report(&mut self, code: &str, message: impl Into<String>) {
-        self.entries.push(Entry {
-            code: code.to_string(),
-            message: message.into(),
-        });
+        self.entries.push(Entry::new(code, message));
     }
 
     fn open(&mut self, name: &str, attrs: Vec<Attr>) {

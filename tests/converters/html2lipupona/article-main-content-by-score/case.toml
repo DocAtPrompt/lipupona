@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3.2"
+note = "Without main or article, the best-scoring block is the main content; the heading before it stays, sidebar, comments, bar and share links go."
+mode = "article"

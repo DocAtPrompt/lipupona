@@ -1,9 +1,9 @@
 # Converters — work plan
 
-**Status: steps 1 to 3 of §5 are built** (`converters/md2lipupona`,
+**Status: all four steps of §5 are built** (`converters/md2lipupona`,
 flavours `commonmark`, `gfm` and `obsidian`; `converters/html2lipupona`,
-mode *export*); mode *article* is planned. The command `lipupona` (`cli/`)
-runs both: `from-md` and `from-html`, with `--document` for a whole
+modes *export* and *article*). The command `lipupona` (`cli/`) runs both:
+`from-md` and `from-html` (`--article`), with `--document` for a whole
 document whose head it writes from the returned values, on a file or on a
 folder (with a resolver for wikilinks, §2). **Informative, not part of the
 format.** The converters use the core library (reader, writer,
@@ -307,6 +307,70 @@ best-scoring content block and its relevant neighbours.
   links looks like navigation, an info box like an advert. That is why every
   stripped region stays in the report with its content (§1 rule 3), and why
   *export* mode never uses this step.
+
+**Decisions for *article* mode** (2026-10-18). The user decided the
+frame: a report entry carries the stripped content, the heuristic is the
+converter's own (no Readability port, no ad-block lists, so no licence to
+check). The details below are proposed here for review.
+
+- **The report.** Every stripped region is one `stripped-region` entry:
+  the message names the element (`nav`, `div#comments`, `div.share`,
+  `div[role=navigation]`) and the start of its text; the entry's content is
+  the region converted by the rules of *export* mode, as canonical HTML, so
+  that an application can put it back. What the conversion of a stripped
+  region reports itself is not reported. A region without text or image is
+  removed without an entry (a hidden icon).
+- **Step 1** (§3.3) strips, in this order of looking:
+  - `nav` and `aside` anywhere; `header` and `footer` except inside
+    `article` (an article's own header holds its title and byline, and is
+    unwrapped as in *export*);
+  - elements with `role` `navigation`, `banner`, `contentinfo`,
+    `complementary` or `search`;
+  - elements with `hidden` or `aria-hidden="true"`;
+  - `form`, except a form that holds `main`, `article` or `h1` (some
+    frameworks wrap the whole page in one): that one is unwrapped as in
+    *export*.
+- **Step 2** (§3.4) chooses the main content, on a page that holds at
+  least 500 characters of text after step 1, whitespace not counted (on a
+  shorter one there is too little to tell, and step 2 and the cleaning do
+  nothing):
+  - Declared meaning first: the only `main`, else the only `article`.
+  - Otherwise by score, after Readability. Each paragraph-like block —
+    `p`, `pre`, and a `td`, `blockquote` or `div` that holds no block —
+    with at least 25 characters of text scores 1, plus 1 per comma, plus 1
+    per 100 characters up to 3. The score goes fully to its nearest
+    candidate ancestor and half to the next; candidates are `div`,
+    `section`, `article`, `main`, `td`, `blockquote` and the body. A
+    candidate starts from its kind (`div` +5; `td`, `blockquote` +3) and
+    its class and id: +25 for a positive name (`article`, `body`,
+    `content`, `entry`, `main`, `page`, `post`, `text`, `blog`, `story`),
+    −25 for a negative one (`ad`, `banner`, `comment`, `comments`,
+    `footer`, `menu`, `nav`, `newsletter`, `promo`, `related`, `share`,
+    `sidebar`, `social`, `sponsor`, `widget`); a name counts when it is a
+    whole word of the class or id, split at `-` and `_`. The final score is
+    multiplied by one minus the link density (the share of the text that is
+    in links).
+  - The best candidate is the main content — unless three others score at
+    least three quarters of it: then the nearest ancestor that holds three
+    of them (content split into sections). While the main content is the
+    only element in a candidate, that candidate is.
+  - No block scores (a page of lists or tables only): nothing is stripped
+    in step 2.
+  - Its siblings stay with it: a container (`div`, `section`, `article`,
+    `main`, `aside`, `nav`, `header`, `footer`, `form`, `table`) when it
+    scores at least a fifth of the main content (and at least 10); anything
+    else — a heading, a paragraph, a list, a figure — unless its class or
+    id is negative or at least half of its text is links.
+  - Everything else is stripped, as the largest regions that hold text:
+    the siblings of the main content and of each of its ancestors. A body
+    as main content strips nothing.
+- **Cleaning the main content.** Inside it, a `div`, `section`, `ul`,
+  `ol` or `form` is stripped when its class or id is negative and not
+  positive, or when it holds at least three links that make up more than
+  half of its text. Tables and paragraphs are never stripped there — a
+  dosage table full of links stays.
+- The title of the page is returned as a value in both modes; a heading
+  that step 2 strips is in the report like any other region.
 
 ### 3.5 Limits
 

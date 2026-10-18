@@ -6,7 +6,12 @@
 //! and every such change goes into the report. The tree is stored through
 //! the library as canonical HTML of the reference profile.
 //!
+//! In mode *article* the regions of a web page that are not its content are
+//! stripped first (`article`), each kept in the report with its content.
+//!
 //! Like the core, the converter does no IO: text in, HTML and report out.
+
+mod article;
 
 use lipupona::dom::{Attr, Element, Node};
 use lipupona::{Code, Profile};
@@ -22,6 +27,9 @@ pub enum Mode {
     /// HTML written by an editor: only what is never content is removed.
     #[default]
     Export,
+    /// A web page to keep: navigation, sidebars, comments and the like are
+    /// stripped as well, and reported with their content.
+    Article,
 }
 
 /// What belongs in the document's head, for the caller to write.
@@ -62,9 +70,37 @@ const EMBEDS: &[&str] = &["iframe", "video", "audio", "embed", "object"];
 
 /// Converts foreign HTML into a lipupona document.
 pub fn convert(html: &str, mode: Mode) -> Conversion {
-    let Mode::Export = mode;
     let profile = Profile::reference(lipupona::IMPLEMENTATION);
-    let (mut blocks, mut report) = blocks(html);
+    let nodes = lipupona::html::parse(html);
+    let mut targets = Vec::new();
+    link_targets(&nodes, &mut targets);
+    let (nodes, stripped) = match mode {
+        Mode::Export => (nodes, Vec::new()),
+        Mode::Article => article::strip(nodes),
+    };
+    // A stripped region, converted by the rules of export mode, goes into
+    // the report with its content; what that conversion reports does not.
+    let mut report: Vec<Entry> = stripped
+        .into_iter()
+        .map(|region| {
+            let (blocks, _) = convert_nodes(&profile, region.nodes, &targets);
+            let mut entry = Entry::new("stripped-region", region.label);
+            entry.content = Some(store(&profile, blocks, &mut Vec::new()));
+            entry
+        })
+        .collect();
+    let (blocks, entries) = convert_nodes(&profile, nodes, &targets);
+    report.extend(entries);
+    Conversion {
+        html: store(&profile, blocks, &mut report),
+        report,
+        meta: head(html),
+    }
+}
+
+/// Flattens lists deeper than the profile and stores the blocks as
+/// canonical HTML, reporting both.
+fn store(profile: &Profile, mut blocks: Vec<Node>, report: &mut Vec<Entry>) -> String {
     for _ in 0..flatten_lists(&mut blocks, profile.list_depth()) {
         report.push(Entry::new(
             "list-depth-reduced",
@@ -77,11 +113,7 @@ pub fn convert(html: &str, mode: Mode) -> Conversion {
             report.push(Entry::new(d.code.as_str(), d.message));
         }
     }
-    Conversion {
-        html: stored.text,
-        report,
-        meta: head(html),
-    }
+    stored.text
 }
 
 /// Converts foreign HTML, in mode *export*, into blocks of the profile for a
@@ -93,9 +125,18 @@ pub fn blocks(html: &str) -> (Vec<Node>, Vec<Entry>) {
     let nodes = lipupona::html::parse(html);
     let mut targets = Vec::new();
     link_targets(&nodes, &mut targets);
+    convert_nodes(&profile, nodes, &targets)
+}
+
+/// Converts parsed nodes by the table of §3.2: blocks, and the report.
+fn convert_nodes(
+    profile: &Profile,
+    nodes: Vec<Node>,
+    targets: &[String],
+) -> (Vec<Node>, Vec<Entry>) {
     let mut c = Converter {
-        profile: &profile,
-        targets,
+        profile,
+        targets: targets.to_vec(),
         entries: Vec::new(),
         summary: Vec::new(),
         in_link: 0,

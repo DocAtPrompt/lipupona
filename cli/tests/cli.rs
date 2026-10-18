@@ -99,6 +99,10 @@ fn a_converted_document_passes_the_check() {
 fn from_html_writes_the_body() {
     let out = run(&["from-html"], "<div><p><span>Anämie</span></p></div>");
     assert_eq!((out.code, out.stdout.as_str()), (0, "<p>Anämie</p>\n"));
+    let page = "<nav><a href=\"/\">Start</a></nav><p>Anämie</p>";
+    let out = run(&["from-html", "--article"], page);
+    assert_eq!((out.code, out.stdout.as_str()), (0, "<p>Anämie</p>\n"));
+    assert_eq!(out.stderr, "<stdin>: stripped-region: nav: Start\n");
 }
 
 #[test]
@@ -129,6 +133,7 @@ fn usage_errors_exit_with_2() {
         &["canon", "--flavour", "gfm"],
         &["display", "--document"],
         &["from-html", "--definition-lists"],
+        &["from-md", "--article"],
         &["html", "a", "b"],
         &["check", "-o", "x"],
         &["from-md", "--flavour", "wiki"],

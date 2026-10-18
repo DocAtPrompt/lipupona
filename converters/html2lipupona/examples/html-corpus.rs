@@ -2,15 +2,19 @@
 //! the laws of SPEC §9.2: canonical (L4), in the profile, and read back from
 //! its display (L1). Prints what fails and a tally of the report codes.
 //!
-//! `cargo run -p html2lipupona --example html-corpus -- <folder>`
+//! `cargo run -p html2lipupona --example html-corpus -- <folder> [export|article]`
 
 use std::collections::BTreeMap;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
     let Some(dir) = std::env::args().nth(1) else {
-        eprintln!("usage: html-corpus <folder>");
+        eprintln!("usage: html-corpus <folder> [export|article]");
         return ExitCode::FAILURE;
+    };
+    let mode = match std::env::args().nth(2).as_deref() {
+        Some("article") => html2lipupona::Mode::Article,
+        _ => html2lipupona::Mode::Export,
     };
     let mut files: Vec<_> = match std::fs::read_dir(&dir) {
         Ok(r) => r
@@ -30,7 +34,7 @@ fn main() -> ExitCode {
         let Ok(html) = std::fs::read_to_string(path) else {
             continue;
         };
-        let out = html2lipupona::convert(&html, html2lipupona::Mode::Export);
+        let out = html2lipupona::convert(&html, mode);
         for e in &out.report {
             *codes.entry(e.code.clone()).or_default() += 1;
         }

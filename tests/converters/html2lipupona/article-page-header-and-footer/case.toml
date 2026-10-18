@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3.2"
+note = "The page's header and footer are stripped, an article's own header and footer stay."
+mode = "article"

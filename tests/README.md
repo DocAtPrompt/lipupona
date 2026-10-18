@@ -19,6 +19,7 @@ tests/<area>/<case>/
   diagnostics.txt    expected diagnostic codes, one per line (optional)
   report.txt         expected report codes, one per line    (kind conversion, optional)
   meta.txt           expected values for the head            (kind conversion, optional)
+  stripped.html      content of the stripped regions         (kind conversion, optional)
   case.toml          kind, profile, spec section, note      (required)
 ```
 
@@ -35,7 +36,7 @@ tests/<area>/<case>/
 | `canonical` | `canon(input.html) == expected.html` and `canon(expected.html) == expected.html` (C1–C14, L4) |
 | `passthrough` | `canon(input.html) == input.html`, byte for byte, with the listed diagnostics (L5, L6) |
 | `diagnostic` | reading the one input file (`input.txt` or `input.html`) reports the listed diagnostics |
-| `conversion` | the converter turns `input.md` into `expected.html` with the codes of `report.txt`; `expected.html` is canonical (`canon` returns it unchanged and reports nothing outside the profile) and satisfies L1 |
+| `conversion` | the converter turns `input.md` (or `input.html`) into `expected.html` with the codes of `report.txt`; `expected.html` is canonical (`canon` returns it unchanged and reports nothing outside the profile) and satisfies L1 |
 
 In every kind the diagnostics reported must be exactly those listed in
 `diagnostics.txt`, in any order, each as often as listed. A case without
@@ -49,7 +50,10 @@ converter's own runner; `docs/converters.md` is their specification.
 `key: value` per line in the order `title`, `lang`, `created`, `source`,
 `aliases`, `tags`, then other keys as they appear; a list is written with
 `, ` between its items, and a key without a value is left out. A case
-without `meta.txt` expects no values.
+without `meta.txt` expects no values. `stripped.html` (html2lipupona, mode
+*article*) holds the content of the `stripped-region` entries, each as
+canonical HTML, one after the other in the order of the report; without it
+the content is not checked.
 
 ## Conventions
 

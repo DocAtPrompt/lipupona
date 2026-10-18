@@ -7,11 +7,13 @@ use lipupona::Profile;
 use lipupona::dom::{Attr, Element, Node, Text};
 
 /// One entry of a converter's report: a stable code (`docs/converters.md`
-/// §4 or the diagnostics of SPEC §9.3) and what it is about.
+/// §4 or the diagnostics of SPEC §9.3), what it is about, and for a region
+/// that was stripped its content as canonical HTML (§1 rule 3).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
     pub code: String,
     pub message: String,
+    pub content: Option<String>,
 }
 
 impl Entry {
@@ -19,6 +21,7 @@ impl Entry {
         Entry {
             code: code.to_string(),
             message: message.into(),
+            content: None,
         }
     }
 }

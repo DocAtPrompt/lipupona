@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3.2"
+note = "A page with less than 500 characters of text keeps everything that step 1 does not strip."
+mode = "article"

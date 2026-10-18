@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3.2"
+note = "A form is stripped with its controls."
+mode = "article"

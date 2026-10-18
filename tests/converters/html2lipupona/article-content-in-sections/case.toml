@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3.2"
+note = "Content split into sections that score alike is kept as their common ancestor."
+mode = "article"

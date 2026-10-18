@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3.2"
+note = "Hidden elements are stripped; one without text goes without an entry."
+mode = "article"
