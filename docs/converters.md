@@ -4,7 +4,8 @@
 flavours `commonmark`, `gfm` and `obsidian`; `converters/html2lipupona`,
 mode *export*); mode *article* is planned. The command `lipupona` (`cli/`)
 runs both: `from-md` and `from-html`, with `--document` for a whole
-document whose head it writes from the returned values. **Informative, not part of the
+document whose head it writes from the returned values, on a file or on a
+folder (with a resolver for wikilinks, §2). **Informative, not part of the
 format.** The converters use the core library (reader, writer,
 canonicaliser). Nothing here changes `SPEC.md`.
 
@@ -173,6 +174,15 @@ next term).
   lipupona keeps hidden as Obsidian does. Comments across blocks stay text.
 - **Not read** (they stay text): math `$…$`, inline footnotes `^[…]`, block
   references `^id`, task markers other than `x` and space.
+
+**The CLI's resolver** (2026-10-18). Converting a folder, the command
+`lipupona` finds a wikilink's or embed's target among the folder's files as
+Obsidian does: by name — a note without `.md` — in any case and in NFC, or
+by the end of its path (`Labor/Ferritin`); where several match, the
+shortest path wins. The `href` is relative to the page being converted,
+with `.md` turned into `.html`; a section after `#` is dropped, since
+headings carry no ids. The folder is mirrored: other files are copied,
+hidden ones (`.obsidian`) left out. A single file has no resolver.
 
 **Template:** the author's earlier Markdown importer (konsona-2, not public)
 already covers most of the Obsidian flavour and has its own loss report. It

@@ -100,7 +100,8 @@ Version 0.2.0, a draft for review.
   everything.
 - [`cli/`](cli/) — the `lipupona` command over the library and the
   converters: `canon`, `display`, `html`, `from-md`, `from-html` and
-  `check` (for stored files). `cargo install --path cli` installs it;
+  `check` (for stored files), on files or whole folders — an Obsidian
+  vault with its wikilinks. `cargo install --path cli` installs it;
   `lipupona display page.html` shows a page's notation, `lipupona --help`
   the rest.
 

@@ -31,6 +31,7 @@ dependencies = [
  "html2lipupona",
  "lipupona",
  "md2lipupona",
+ "unicode-normalization",
 ]
 
 [[package]]

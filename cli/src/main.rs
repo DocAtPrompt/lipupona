@@ -3,9 +3,11 @@
 //! writes files (docs/ports.md §1).
 
 mod document;
+mod folder;
 
+use std::collections::HashSet;
 use std::io::{self, Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use md2lipupona::Flavour;
@@ -14,6 +16,8 @@ const USAGE: &str = "\
 lipupona — a plain-text notation for profiled HTML
 
 usage: lipupona <command> [options] [file]
+       lipupona from-md|from-html [options] <folder> -o <folder>
+       lipupona check [file|folder]...
 
 commands:
   canon       canonical HTML of the body of an HTML file (SPEC §4)
@@ -32,10 +36,16 @@ options:
   -h, --help            show this text
   -V, --version         show the version
 
-Without a file, or with -, the input is standard input; check takes several
-files. A file that is a whole document is checked by its body. Diagnostics
-and reports go to standard error as `<file>: <code>: <message>`, check's
-findings to standard output. Wikilinks stay text: from-md has no resolver yet.
+Without a file, or with -, the input is standard input. A file that is a
+whole document is checked by its body. Diagnostics and reports go to
+standard error as `<file>: <code>: <message>`, check's findings to standard
+output.
+
+A folder is converted into a folder of the same shape: Markdown (from-md)
+or HTML (from-html) files become .html files, other files are copied,
+hidden ones are left out. Wikilinks and embeds find their target among the
+folder's files by name, as in Obsidian; outside a folder they stay text.
+check takes the .html files below a folder.
 
 Exit status: 0 done, 1 check found something, 2 usage or file error.
 ";
@@ -48,6 +58,27 @@ enum Command {
     FromMd,
     FromHtml,
     Check,
+}
+
+impl Command {
+    fn name(self) -> &'static str {
+        match self {
+            Command::Canon => "canon",
+            Command::Display => "display",
+            Command::Html => "html",
+            Command::FromMd => "from-md",
+            Command::FromHtml => "from-html",
+            Command::Check => "check",
+        }
+    }
+
+    /// The extensions of the files a conversion reads in a folder.
+    fn extensions(self) -> &'static [&'static str] {
+        match self {
+            Command::FromMd => &["md"],
+            _ => &["html", "htm"],
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -163,6 +194,16 @@ fn run(args: &Args) -> ExitCode {
         return check(&args.files);
     }
     let path = args.files.first().map(String::as_str).unwrap_or("-");
+    if path != "-" && Path::new(path).is_dir() {
+        if !matches!(args.command, Command::FromMd | Command::FromHtml) {
+            eprintln!(
+                "lipupona: {} takes a file, not a folder",
+                args.command.name()
+            );
+            return ExitCode::from(2);
+        }
+        return tree(args, Path::new(path));
+    }
     let src = match read(path) {
         Ok(s) => s,
         Err(e) => {
@@ -170,7 +211,7 @@ fn run(args: &Args) -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let (text, notes) = convert(args, path, &src);
+    let (text, notes) = convert(args, path, &src, None);
     let target = args.output.as_deref();
     let written = write_out(target, &text);
     for note in notes {
@@ -179,8 +220,115 @@ fn run(args: &Args) -> ExitCode {
     finish(written, target.unwrap_or("-"))
 }
 
+/// Converts every file below `input` that the command reads into the same
+/// place below the output folder, as `.html`; other files are copied.
+fn tree(args: &Args, input: &Path) -> ExitCode {
+    let Some(output) = args.output.as_deref().filter(|o| *o != "-") else {
+        eprintln!("lipupona: a folder is converted into a folder: -o <folder>");
+        return ExitCode::from(2);
+    };
+    let output = Path::new(output);
+    if output.exists() && !output.is_dir() {
+        eprintln!("lipupona: {}: not a folder", output.display());
+        return ExitCode::from(2);
+    }
+    // An output inside the input would be read as input on the next run.
+    if let (Ok(i), Some(o)) = (input.canonicalize(), absolute(output))
+        && o.starts_with(&i)
+    {
+        eprintln!("lipupona: the output folder lies inside the input folder");
+        return ExitCode::from(2);
+    }
+    let mut skipped = Vec::new();
+    let files = match folder::walk(input, &mut skipped) {
+        Ok(files) => files,
+        Err(e) => {
+            eprintln!("lipupona: {}: {e}", input.display());
+            return ExitCode::from(2);
+        }
+    };
+    for path in &skipped {
+        eprintln!(
+            "{}: skipped, a link to a folder",
+            input.join(path).display()
+        );
+    }
+    let exts = args.command.extensions();
+    let index = folder::Index::new(&files);
+    // Converted files first: they win over a copied file of the same name.
+    let (read, copied): (Vec<_>, Vec<_>) =
+        files.iter().partition(|p| folder::has_extension(p, exts));
+    let mut written = HashSet::new();
+    let mut failed = false;
+    for rel in read.into_iter().chain(copied) {
+        let from = input.join(rel);
+        let name = folder::html_name(rel, exts);
+        let to = output.join(&name);
+        if !written.insert(name) {
+            eprintln!(
+                "{}: skipped, {} is written already",
+                from.display(),
+                to.display()
+            );
+            continue;
+        }
+        let result = match folder::has_extension(rel, exts) {
+            true => std::fs::read_to_string(&from).map(|src| {
+                let resolve = |target: &str| index.resolve(rel, target);
+                convert(args, &from.to_string_lossy(), &src, Some(&resolve))
+            }),
+            false => Ok((String::new(), Vec::new())),
+        };
+        let done = result.and_then(|(text, notes)| {
+            if let Some(dir) = to.parent() {
+                std::fs::create_dir_all(dir)?;
+            }
+            match folder::has_extension(rel, exts) {
+                true => std::fs::write(&to, text)?,
+                false => _ = std::fs::copy(&from, &to)?,
+            }
+            Ok(notes)
+        });
+        match done {
+            Ok(notes) => {
+                for note in notes {
+                    eprintln!("{}: {note}", from.display());
+                }
+            }
+            Err(e) => {
+                eprintln!("lipupona: {}: {e}", from.display());
+                failed = true;
+            }
+        }
+    }
+    if failed {
+        ExitCode::from(2)
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+/// `path` made absolute through its nearest existing ancestor.
+fn absolute(path: &Path) -> Option<PathBuf> {
+    let path = std::env::current_dir().ok()?.join(path);
+    let mut rest = Vec::new();
+    let mut base = path.as_path();
+    loop {
+        if let Ok(found) = base.canonicalize() {
+            return Some(rest.iter().rev().fold(found, |p, c| p.join(c)));
+        }
+        rest.push(base.file_name()?);
+        base = base.parent()?;
+    }
+}
+
 /// The output text and the diagnostics or report entries, as `code: message`.
-fn convert(args: &Args, path: &str, src: &str) -> (String, Vec<String>) {
+fn convert(
+    args: &Args,
+    path: &str,
+    src: &str,
+    resolve: Option<md2lipupona::Resolver>,
+) -> (String, Vec<String>) {
     let core = |out: lipupona::Output| {
         let notes = out.diagnostics.iter().map(|d| d.to_string()).collect();
         (out.text, notes)
@@ -206,7 +354,7 @@ fn convert(args: &Args, path: &str, src: &str) -> (String, Vec<String>) {
             let settings = md2lipupona::Settings {
                 flavour: args.flavour.unwrap_or_default(),
                 definition_lists: args.definition_lists,
-                ..Default::default()
+                resolve,
             };
             let out = md2lipupona::convert_with(src, &settings);
             let notes = report(&out.report);
@@ -254,11 +402,31 @@ fn convert(args: &Args, path: &str, src: &str) -> (String, Vec<String>) {
 /// Prints what keeps each file from being stored as it is: not canonical,
 /// or blocks outside the profile. Exit status 1 if anything was found.
 fn check(files: &[String]) -> ExitCode {
-    let stdin = ["-".to_string()];
-    let files = if files.is_empty() { &stdin[..] } else { files };
     let (mut found, mut failed) = (false, false);
-    let mut lines = String::new();
+    let mut paths = Vec::new();
     for path in files {
+        if path == "-" || !Path::new(path).is_dir() {
+            paths.push(path.clone());
+            continue;
+        }
+        match folder::walk(Path::new(path), &mut Vec::new()) {
+            Ok(below) => paths.extend(
+                below
+                    .iter()
+                    .filter(|p| folder::has_extension(p, &["html", "htm"]))
+                    .map(|p| Path::new(path).join(p).to_string_lossy().into_owned()),
+            ),
+            Err(e) => {
+                eprintln!("lipupona: {path}: {e}");
+                failed = true;
+            }
+        }
+    }
+    if files.is_empty() {
+        paths.push("-".to_string());
+    }
+    let mut lines = String::new();
+    for path in &paths {
         let src = match read(path) {
             Ok(s) => s,
             Err(e) => {

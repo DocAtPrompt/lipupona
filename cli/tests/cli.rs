@@ -143,3 +143,48 @@ fn usage_errors_exit_with_2() {
     assert_eq!(help.code, 0);
     assert!(help.stdout.starts_with("lipupona — "));
 }
+
+#[test]
+fn a_folder_becomes_a_folder_with_links_between_its_pages() {
+    let vault = scratch("vault");
+    let out = scratch("vault-out");
+    let _ = std::fs::remove_dir_all(&vault);
+    let _ = std::fs::remove_dir_all(&out);
+    for dir in ["Labor", "Befunde", "bilder", ".obsidian"] {
+        std::fs::create_dir_all(vault.join(dir)).unwrap();
+    }
+    let write = |name: &str, text: &str| std::fs::write(vault.join(name), text).unwrap();
+    write("Labor/Ferritin.md", "Siehe [[Anämie]].\n");
+    write(
+        "Befunde/Anämie.md",
+        "Ferritin [[Ferritin#Normwerte|erniedrigt]], ![[hb.png]], [[Fehlt]].\n",
+    );
+    write("bilder/hb.png", "PNG");
+    write(".obsidian/app.json", "{}");
+    let (v, o) = (vault.to_str().unwrap(), out.to_str().unwrap());
+    let run_ = run(&["from-md", "--flavour", "obsidian", v, "-o", o], "");
+    assert_eq!(run_.code, 0);
+    let anaemie = vault.join("Befunde/Anämie.md");
+    assert_eq!(
+        run_.stderr,
+        format!("{}: unresolved-link: [[Fehlt]]\n", anaemie.display())
+    );
+    let read = |name: &str| std::fs::read_to_string(out.join(name)).unwrap();
+    assert_eq!(
+        read("Befunde/Anämie.html"),
+        "<p>Ferritin <a href=\"../Labor/Ferritin.html\">erniedrigt</a>, \
+         <img alt=\"hb.png\" src=\"../bilder/hb.png\">, [[Fehlt]].</p>\n"
+    );
+    assert_eq!(
+        read("Labor/Ferritin.html"),
+        "<p>Siehe <a href=\"../Befunde/An%C3%A4mie.html\">Anämie</a>.</p>\n"
+    );
+    assert_eq!(read("bilder/hb.png"), "PNG");
+    assert!(!out.join(".obsidian").exists());
+    assert_eq!(run(&["check", o], "").code, 0);
+    let inside = vault.join("out");
+    let inside = run(&["from-md", v, "-o", inside.to_str().unwrap()], "");
+    assert_eq!(inside.code, 2);
+    assert_eq!(run(&["from-md", v], "").code, 2);
+    assert_eq!(run(&["display", v], "").code, 2);
+}
