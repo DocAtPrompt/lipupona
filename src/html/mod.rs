@@ -237,6 +237,38 @@ const SPECIAL: &[&str] = &[
     "xmp",
 ];
 
+/// End tags that close their element with everything open inside it, if
+/// it is in scope, and are ignored otherwise (WHATWG, "in body").
+const BLOCK_END: &[&str] = &[
+    "address",
+    "article",
+    "aside",
+    "blockquote",
+    "button",
+    "center",
+    "details",
+    "dialog",
+    "dir",
+    "div",
+    "dl",
+    "fieldset",
+    "figcaption",
+    "figure",
+    "footer",
+    "header",
+    "hgroup",
+    "listing",
+    "main",
+    "menu",
+    "nav",
+    "ol",
+    "pre",
+    "search",
+    "section",
+    "summary",
+    "ul",
+];
+
 const TABLE_PARTS: &[&str] = &[
     "table", "caption", "thead", "tbody", "tfoot", "tr", "td", "th",
 ];
@@ -561,6 +593,31 @@ impl<'a> Parser<'a> {
                 span: start..end,
                 implied_end: false,
             })),
+            // A block's end tag closes what is open inside it; without the
+            // block in scope it is ignored. `</li>`, `</dd>`, `</dt>` and a
+            // heading's end tag likewise.
+            _ if !self.in_foreign()
+                && (BLOCK_END.contains(&name)
+                    || matches!(name, "li" | "dd" | "dt")
+                    || HEADINGS.contains(&name)) =>
+            {
+                let targets: &[&str] = if HEADINGS.contains(&name) {
+                    HEADINGS
+                } else {
+                    std::slice::from_ref(&name)
+                };
+                let extra: &[&str] = if name == "li" { &["ol", "ul"] } else { &[] };
+                if !targets.iter().any(|t| self.in_scope(t, extra)) {
+                    return;
+                }
+                while let Some(e) = self.current() {
+                    if targets.contains(&e.name.as_str()) {
+                        self.pop(end, false);
+                        return;
+                    }
+                    self.pop(start, true);
+                }
+            }
             _ => {
                 // Elements whose end tags are implied by the end tag of an
                 // ancestor; the search goes on past them.

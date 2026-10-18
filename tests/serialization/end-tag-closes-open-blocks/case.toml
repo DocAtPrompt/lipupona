@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "An end tag closes the blocks left open inside it, as an HTML parser does; what follows stands after it."
