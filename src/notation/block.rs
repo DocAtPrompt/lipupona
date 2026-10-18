@@ -531,6 +531,7 @@ impl<'p> Reader<'p> {
             let caption = caption.map(|(line, _)| line);
             let before = out.len();
             let line_before = i;
+            let line_was = lines[i];
             let marks_before = self.checkpoint();
             let top = self.depth == 0;
             if top {
@@ -564,8 +565,9 @@ impl<'p> Reader<'p> {
                 self.merge(e, attrs);
             }
             // Every line is read once: a construct that took nothing leaves
-            // its line as text.
-            if i == line_before {
+            // its line as text. (A typed block on one line with text after
+            // it took the line up to that text.)
+            if i == line_before && lines[i].len() == line_was.len() {
                 out.truncate(before);
                 self.undo(marks_before);
                 para.push(lines[i].trim_start_matches(SP), self.track.as_ref());
