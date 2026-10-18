@@ -1,0 +1,3 @@
+kind = "conversion"
+section = "3.2"
+note = "A dt that no dd follows becomes a paragraph in strong, a dd that no dt precedes gives its content as blocks."

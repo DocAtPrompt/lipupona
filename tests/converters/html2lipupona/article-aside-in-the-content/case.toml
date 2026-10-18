@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3.2"
+note = "An aside inside the main content stays as an info box; one outside it is stripped."
+mode = "article"

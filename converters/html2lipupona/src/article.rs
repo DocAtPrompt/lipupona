@@ -15,19 +15,48 @@ use lipupona::dom::{Element, Node};
 pub struct Stripped {
     pub label: String,
     pub nodes: Vec<Node>,
+    /// What follows the element in the label (`[role=…]`).
+    mark: String,
 }
 
 /// The nodes of the page's body that stay, and the regions stripped from
 /// it, in the order they were found.
 pub fn strip(nodes: Vec<Node>) -> (Vec<Node>, Vec<Stripped>) {
     let mut out = Vec::new();
+    let one_h1 = count(&nodes, "h1") == 1;
     let nodes = structural(nodes, false, &mut out);
-    let (nodes, found) = main_content(nodes, &mut out);
-    let nodes = match found {
-        true => clean(nodes, &mut out),
-        false => nodes,
-    };
+    let (mut nodes, found) = main_content(nodes, &mut out);
+    if found {
+        nodes = clean(nodes, &mut out);
+    }
+    // The page's only h1 is its title: it stays, first, wherever it stood.
+    if one_h1 && count(&nodes, "h1") == 0 {
+        for region in out.iter_mut() {
+            if let Some(h1) = take_h1(&mut region.nodes) {
+                nodes.insert(0, h1);
+                region.label = label_of(&region.nodes, &region.mark);
+                break;
+            }
+        }
+        out.retain(|r| !r.label.is_empty());
+    }
     (nodes, out)
+}
+
+/// Removes the first h1 from `nodes`, at any depth.
+fn take_h1(nodes: &mut Vec<Node>) -> Option<Node> {
+    for k in 0..nodes.len() {
+        match &mut nodes[k] {
+            Node::Element(e) if e.name == "h1" => return Some(nodes.remove(k)),
+            Node::Element(e) => {
+                if let Some(h1) = take_h1(&mut e.children) {
+                    return Some(h1);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 // ------------------------------------------------------------------ step 1
@@ -55,21 +84,13 @@ fn structural(nodes: Vec<Node>, in_article: bool, out: &mut Vec<Stripped>) -> Ve
 /// alone, `[role=…]` or `[hidden]`; None when it may be.
 fn structural_mark(el: &Element, in_article: bool) -> Option<String> {
     match el.name.as_str() {
-        "nav" | "aside" => return Some(String::new()),
+        "nav" => return Some(String::new()),
         "header" | "footer" if !in_article => return Some(String::new()),
         _ => {}
     }
     if let Some(role) = el.attr("role") {
         let role = role.trim().to_ascii_lowercase();
-        if [
-            "navigation",
-            "banner",
-            "contentinfo",
-            "complementary",
-            "search",
-        ]
-        .contains(&role.as_str())
-        {
+        if ["navigation", "banner", "contentinfo", "search"].contains(&role.as_str()) {
             return Some(format!("[role={role}]"));
         }
     }
@@ -177,7 +198,14 @@ fn main_content(nodes: Vec<Node>, out: &mut Vec<Stripped>) -> (Vec<Node>, bool) 
         return (root.children, false);
     }
     let (top, siblings) = match only(&root, "main").or_else(|| only(&root, "article")) {
-        Some(path) => (path, Vec::new()),
+        Some(path) => {
+            let parent = get(&root, &path[..path.len() - 1]);
+            let keep = (0..parent.children.len())
+                .filter(|&i| i != path[path.len() - 1])
+                .filter(|&i| matches!(&parent.children[i], Node::Element(e) if content_like(e)))
+                .collect();
+            (path, keep)
+        }
         None => {
             let scores = scores(&root);
             let Some(top) = best(&root, &scores) else {
@@ -200,22 +228,28 @@ fn cut(el: Element, path: &[usize], siblings: &[usize], out: &mut Vec<Stripped>)
         return vec![Node::Element(el)];
     };
     let mut kept = Vec::new();
+    let mut after = Vec::new();
     let mut next = None;
     for (i, child) in el.children.into_iter().enumerate() {
-        if i == index && rest.is_empty() {
-            kept.push(child);
-        } else if i == index {
+        let keep = match rest.is_empty() {
+            true => i == index || siblings.contains(&i),
+            false => matches!(&child, Node::Element(e) if content_like(e)),
+        };
+        if i == index && !rest.is_empty() {
             next = Some(child);
-        } else if rest.is_empty() && siblings.contains(&i) {
+        } else if keep && (rest.is_empty() || i < index) {
             kept.push(child);
+        } else if keep {
+            after.push(child);
         } else {
             take(out, child, "");
         }
     }
-    match next {
-        Some(Node::Element(e)) => cut(e, rest, siblings, out),
-        _ => kept,
+    if let Some(Node::Element(e)) = next {
+        kept.extend(cut(e, rest, siblings, out));
     }
+    kept.extend(after);
+    kept
 }
 
 /// The path to the only element named `name`, if there is exactly one.
@@ -391,22 +425,63 @@ fn kept_siblings(root: &Element, top: &[usize], scores: &BTreeMap<Vec<usize>, f6
         if i == index {
             continue;
         }
-        let keeps = if CONTAINERS.contains(&e.name.as_str()) {
-            let mut path = parent_path.to_vec();
-            path.push(i);
-            scores
-                .get(&path)
-                .is_some_and(|&s| s >= (best * 0.2).max(10.0))
-        } else {
-            let (_, negative) = names(e);
-            let (all, linked) = text_lengths(&e.children, e.name == "a");
-            !negative && linked * 2 < all.max(1)
-        };
+        let mut path = parent_path.to_vec();
+        path.push(i);
+        let scored = scores
+            .get(&path)
+            .is_some_and(|&s| s >= (best * 0.2).max(10.0));
+        let keeps = content_like(e) || scored && CONTAINERS.contains(&e.name.as_str());
         if keeps {
             keep.push(i);
         }
     }
     keep
+}
+
+/// Whether the class or id of `e` is negative, or at least half of its text
+/// is links.
+fn negative_or_links(e: &Element) -> bool {
+    let (_, negative) = names(e);
+    let (all, linked) = text_lengths(&e.children, e.name == "a");
+    negative || linked * 2 >= all.max(1)
+}
+
+/// A sibling of an ancestor of the main content that stays: not marked
+/// negative and not made of links, and no container unless it is prose (a
+/// title, a byline, a lead).
+fn content_like(e: &Element) -> bool {
+    match CONTAINERS.contains(&e.name.as_str()) {
+        true => only_paragraphs(e) && is_prose(e) && !names(e).1,
+        false => !negative_or_links(e),
+    }
+}
+
+/// A block that holds no block but paragraphs.
+fn only_paragraphs(e: &Element) -> bool {
+    e.children.iter().all(|n| match n {
+        Node::Element(c) if c.name == "p" => !holds(&c.children, BLOCKS),
+        Node::Element(c) => !BLOCKS.contains(&c.name.as_str()) && !holds(&c.children, BLOCKS),
+        _ => true,
+    })
+}
+
+/// More than 80 characters, less than a quarter of them in links.
+fn is_prose(e: &Element) -> bool {
+    let (all, linked) = text_lengths(&e.children, false);
+    all > 80 && linked * 4 < all
+}
+
+/// Whether `nodes` hold a paragraph of prose: more than 80 characters, less
+/// than half of them in links.
+fn holds_prose(nodes: &[Node]) -> bool {
+    nodes.iter().any(|n| match n {
+        Node::Element(e) if e.name == "p" => {
+            let (all, linked) = text_lengths(&e.children, false);
+            all > 80 && linked * 2 < all
+        }
+        Node::Element(e) => holds_prose(&e.children),
+        _ => false,
+    })
 }
 
 fn get<'a>(root: &'a Element, path: &[usize]) -> &'a Element {
@@ -435,7 +510,13 @@ fn clean(nodes: Vec<Node>, out: &mut Vec<Stripped>) -> Vec<Node> {
             let (positive, negative) = names(&el);
             let (all, linked) = text_lengths(&el.children, false);
             let links = count(&el.children, "a");
-            if (negative && !positive) || (links >= 3 && linked * 2 > all) {
+            // A list of links is content as often as not; prose has commas.
+            let linky = !matches!(el.name.as_str(), "ul" | "ol")
+                && links >= 3
+                && linked * 2 > all
+                && text_of(&el.children).matches(',').count() < 10
+                && !holds_prose(&el.children);
+            if (negative && !positive) || linky {
                 take(out, Node::Element(el), "");
                 continue;
             }
@@ -462,27 +543,36 @@ fn count(nodes: &[Node], name: &str) -> usize {
 /// text, with `mark` after the element. A region without text or image
 /// goes without an entry.
 fn take(out: &mut Vec<Stripped>, node: Node, mark: &str) {
-    let text = text_of(std::slice::from_ref(&node));
-    let label = match &node {
-        Node::Element(el) => {
-            if text.is_empty() && count(&el.children, "img") == 0 && el.name != "img" {
-                return;
+    let nodes = vec![node];
+    let label = label_of(&nodes, mark);
+    if !label.is_empty() {
+        out.push(Stripped {
+            label,
+            nodes,
+            mark: mark.to_string(),
+        });
+    }
+}
+
+/// The label of a stripped region, empty for one without text or image.
+fn label_of(nodes: &[Node], mark: &str) -> String {
+    let text = text_of(nodes);
+    let label = match nodes.first() {
+        Some(Node::Element(el)) => {
+            if text.is_empty() && count(nodes, "img") == 0 {
+                return String::new();
             }
             selector(el) + mark
         }
-        Node::Text(_) if !text.is_empty() => "text".to_string(),
-        _ => return,
+        Some(Node::Text(_)) if !text.is_empty() => "text".to_string(),
+        _ => return String::new(),
     };
     let preview: String = text.chars().take(60).collect();
-    let label = match (preview.is_empty(), preview.len() < text.len()) {
+    match (preview.is_empty(), preview.len() < text.len()) {
         (true, _) => label,
         (false, false) => format!("{label}: {preview}"),
         (false, true) => format!("{label}: {preview}…"),
-    };
-    out.push(Stripped {
-        label,
-        nodes: vec![node],
-    });
+    }
 }
 
 /// `div#comments`, `div.share`, `nav`.

@@ -213,7 +213,7 @@ is a starting point to be adapted, not copied.
 | `span` whose style is bold, italic or line-through (common in Google Docs export) | `strong`, `em`, `s` | — |
 | any other `style` | dropped | `dropped-style` |
 | classes and ids from the foreign document | dropped (they refer to a stylesheet that is not there) | `dropped-attribute`, summarised |
-| `aside` | **not** a callout; in *article* mode stripped as a sidebar, in *export* mode unwrapped | `stripped-region` / `dropped-element` |
+| `aside` | **not** a callout; in *article* mode stripped where it lies outside the main content, in *export* mode unwrapped | `stripped-region` / `dropped-element` |
 | layout table (one cell, nested tables, `role="presentation"`, no header and mostly blocks) | unwrapped | `layout-table-unwrapped` |
 | data table | `table` with `colspan`/`rowspan`; first row of `th` cells becomes `thead` | — |
 | `dl` | `dl` (in the profile since 2026-10-18, SPEC §5.6.1) | — |
@@ -263,6 +263,16 @@ choice:
   blocks.
 - **Anything else** outside the profile is unwrapped, its text kept:
   `dropped-element`.
+- **Empty blocks.** A paragraph or heading without text or image — empty
+  in the source, or emptied by the conversion (an `h3` that held only a
+  button) — is left out without a report; what emptied it is reported
+  already.
+- **Definition lists out of shape.** A `dl` keeps the profile's form,
+  groups of one or more `dt` followed by one or more `dd`. A `dt` that no
+  `dd` follows becomes a paragraph with its text in `strong`, as a browser
+  shows it (MediaWiki's `;Term`); `dd` that no `dt` precedes give their
+  content as blocks in their place (MediaWiki's `:` indentation). Each such
+  repair is `dropped-element`; well-formed groups stay a `dl`.
 - **Parts without their structure** — `tr`, `td`, `th`, `thead`, `tfoot`,
   `caption` without a table, `li` without a list, `dt`/`dd` without `dl`,
   `summary` without `details`, `figcaption` without `figure` — are
@@ -284,9 +294,10 @@ choice:
 
 Reliable, because it rests on declared meaning:
 
-- the page's own `nav`, `header`, `footer`, `aside`;
-- elements with the roles `navigation`, `banner`, `contentinfo`,
-  `complementary`, `search`;
+- the page's own `nav`, `header`, `footer`;
+- elements with the roles `navigation`, `banner`, `contentinfo`, `search`
+  (an `aside`, `role="complementary"`, goes with step 2: an info box in the
+  article stays);
 - hidden elements (`hidden`, `aria-hidden="true"`);
 - `form` and its controls.
 
@@ -309,9 +320,9 @@ best-scoring content block and its relevant neighbours.
   *export* mode never uses this step.
 
 **Decisions for *article* mode** (2026-10-18). The user decided the
-frame: a report entry carries the stripped content, the heuristic is the
+frame — a report entry carries the stripped content, the heuristic is the
 converter's own (no Readability port, no ad-block lists, so no licence to
-check). The details below are proposed here for review.
+check) — and, after a trial on twelve real web pages, the details below.
 
 - **The report.** Every stripped region is one `stripped-region` entry:
   the message names the element (`nav`, `div#comments`, `div.share`,
@@ -321,11 +332,11 @@ check). The details below are proposed here for review.
   region reports itself is not reported. A region without text or image is
   removed without an entry (a hidden icon).
 - **Step 1** (§3.3) strips, in this order of looking:
-  - `nav` and `aside` anywhere; `header` and `footer` except inside
-    `article` (an article's own header holds its title and byline, and is
-    unwrapped as in *export*);
-  - elements with `role` `navigation`, `banner`, `contentinfo`,
-    `complementary` or `search`;
+  - `nav` anywhere; `header` and `footer` except inside `article` (an
+    article's own header holds its title and byline, and is unwrapped as
+    in *export*);
+  - elements with `role` `navigation`, `banner`, `contentinfo` or
+    `search`;
   - elements with `hidden` or `aria-hidden="true"`;
   - `form`, except a form that holds `main`, `article` or `h1` (some
     frameworks wrap the whole page in one): that one is unwrapped as in
@@ -356,21 +367,33 @@ check). The details below are proposed here for review.
     only element in a candidate, that candidate is.
   - No block scores (a page of lists or tables only): nothing is stripped
     in step 2.
-  - Its siblings stay with it: a container (`div`, `section`, `article`,
-    `main`, `aside`, `nav`, `header`, `footer`, `form`, `table`) when it
-    scores at least a fifth of the main content (and at least 10); anything
-    else — a heading, a paragraph, a list, a figure — unless its class or
-    id is negative or at least half of its text is links.
+  - What is *content-like* stays beside it, on its own level and on the
+    level of each of its ancestors: an element that is no container
+    (`div`, `section`, `article`, `main`, `aside`, `nav`, `header`,
+    `footer`, `form`, `table`) — a heading, a paragraph, a list, a figure —
+    unless its class or id is negative or at least half of its text is
+    links; and a container that holds no block but paragraphs and is prose
+    (more than 80 characters, less than a quarter of them in links, its
+    class and id not negative) — a lead, a byline. On the main content's
+    own level a container also stays when it scores at least a fifth of
+    the main content (and at least 10).
   - Everything else is stripped, as the largest regions that hold text:
     the siblings of the main content and of each of its ancestors. A body
-    as main content strips nothing.
+    as main content strips nothing. An `aside` is stripped here when it
+    lies outside the main content, and stays inside it.
 - **Cleaning the main content.** Inside it, a `div`, `section`, `ul`,
   `ol` or `form` is stripped when its class or id is negative and not
-  positive, or when it holds at least three links that make up more than
-  half of its text. Tables and paragraphs are never stripped there — a
-  dosage table full of links stays.
-- The title of the page is returned as a value in both modes; a heading
-  that step 2 strips is in the report like any other region.
+  positive. A `div`, `section` or `form` is stripped as well when it holds
+  at least three links that make up more than half of its text, has fewer
+  than ten commas and holds no paragraph of prose (more than 80
+  characters, less than half of them in links). A list is never stripped
+  for its links — symptoms linked to their articles are content —, and
+  tables and paragraphs are never stripped there — a dosage table full of
+  links stays.
+- **The title.** The page's only `h1` always stays, as the first block of
+  the content, also when it stood in a region that is stripped (a page
+  header); the region is reported without it. The title of the page is
+  also returned as a value in both modes.
 
 ### 3.5 Limits
 

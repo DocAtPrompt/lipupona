@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3.2"
+note = "The page's only h1 stays as the first block when the page header it stands in is stripped."
+mode = "article"

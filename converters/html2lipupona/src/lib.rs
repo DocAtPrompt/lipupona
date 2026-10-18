@@ -270,29 +270,37 @@ impl Converter<'_> {
 
     /// An element of the profile, under `name`, with the attributes the
     /// profile allows and its content fitted to its content model.
-    fn kept(&mut self, el: Element, name: &str) -> Vec<Node> {
+    fn kept(&mut self, mut el: Element, name: &str) -> Vec<Node> {
         let inline = self.profile.is_inline(name);
-        let wraps = match inline {
-            true => self.style_meaning(&el),
-            false => {
-                self.drop_style(&el);
-                Vec::new()
-            }
-        };
-        let attrs = self.attributes(&el, name);
         self.open.push(name.to_string());
-        let children = self.flow(el.children);
+        let children = self.flow(std::mem::take(&mut el.children));
         self.open.pop();
+        // Attributes and styles are reported only for what is kept.
         if inline {
             if children.iter().any(|n| !is_phrasing(self.profile, n)) {
                 // An inline element cannot hold blocks.
                 self.summarise("dropped-element", name);
                 return children;
             }
+            let wraps = self.style_meaning(&el);
+            let attrs = self.attributes(&el, name);
             let mut out = element(name, attrs);
             out.children = wrap_in(wraps, children);
             return vec![Node::Element(out)];
         }
+        // A paragraph or heading with nothing in it is left out.
+        let children = match name {
+            "p" | "h1" | "h2" | "h3" | "h4" => {
+                let children = self.phrasing_only(children);
+                if is_empty(&children) {
+                    return Vec::new();
+                }
+                children
+            }
+            _ => children,
+        };
+        self.drop_style(&el);
+        let attrs = self.attributes(&el, name);
         let children = match name {
             "p" | "h1" | "h2" | "h3" | "h4" | "dt" | "summary" => {
                 let children = self.phrasing_only(children);
@@ -318,7 +326,10 @@ impl Converter<'_> {
             }
             "td" | "th" | "caption" | "figcaption" => self.either(children),
             "ul" | "ol" => self.items(children, "li", &["li"]),
-            "dl" => self.items(children, "dd", &["dt", "dd"]),
+            "dl" => {
+                let items = self.items(children, "dd", &["dt", "dd"]);
+                return self.definition_list(attrs, items);
+            }
             "figure" => self.figure(children),
             "details" => self.details(children),
             "hr" | "br" => Vec::new(),
@@ -327,6 +338,48 @@ impl Converter<'_> {
         let mut out = element(name, attrs);
         out.children = children;
         vec![Node::Element(out)]
+    }
+
+    /// A definition list in the profile's form: the groups from its first
+    /// `dt` to its last `dd`; a `dt` no `dd` follows becomes a paragraph in
+    /// `strong`, a `dd` no `dt` precedes gives its content as blocks.
+    fn definition_list(&mut self, attrs: Vec<Attr>, items: Vec<Node>) -> Vec<Node> {
+        let is = |n: &Node, name: &str| matches!(n, Node::Element(e) if e.name == name);
+        let first_dt = items.iter().position(|n| is(n, "dt"));
+        let last_dd = items.iter().rposition(|n| is(n, "dd"));
+        let (from, to) = match (first_dt, last_dd) {
+            (Some(f), Some(l)) if f < l => (f, l + 1),
+            _ => (items.len(), items.len()),
+        };
+        let mut out = Vec::new();
+        let mut list = element("dl", attrs);
+        for (k, item) in items.into_iter().enumerate() {
+            let Node::Element(e) = item else {
+                continue;
+            };
+            if (from..to).contains(&k) {
+                list.children.push(Node::Element(e));
+            } else if e.name == "dt" {
+                self.summarise("dropped-element", "dt without dd");
+                if !is_empty(&e.children) {
+                    let mut strong = element("strong", Vec::new());
+                    strong.children = e.children;
+                    let mut p = element("p", Vec::new());
+                    p.children.push(Node::Element(strong));
+                    out.push(Node::Element(p));
+                }
+            } else {
+                self.summarise("dropped-element", "dd without dt");
+                out.extend(self.blocks_of(e.children));
+            }
+            if k + 1 == to && from < to {
+                out.push(Node::Element(std::mem::replace(
+                    &mut list,
+                    element("dl", Vec::new()),
+                )));
+            }
+        }
+        out
     }
 
     /// An inline element renamed: `b` as `strong`.
@@ -790,6 +843,15 @@ fn split_paragraph(attrs: Vec<Attr>, children: Vec<Node>) -> Vec<Node> {
             Node::Element(p)
         })
         .collect()
+}
+
+/// Whether `nodes` hold neither text nor an image.
+fn is_empty(nodes: &[Node]) -> bool {
+    nodes.iter().all(|n| match n {
+        Node::Text(t) => t.text.trim().is_empty(),
+        Node::Element(e) => e.name != "img" && is_empty(&e.children),
+        _ => true,
+    })
 }
 
 fn is_br(n: &Node) -> bool {

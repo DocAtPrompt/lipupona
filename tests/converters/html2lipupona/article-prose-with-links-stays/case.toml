@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3.2"
+note = "A block in the main content whose text is mostly links stays when it holds a paragraph of prose."
+mode = "article"

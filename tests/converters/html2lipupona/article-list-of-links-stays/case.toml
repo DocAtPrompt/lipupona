@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3.2"
+note = "In the main content a list of linked terms stays; a block of links without prose goes."
+mode = "article"

@@ -1,0 +1,3 @@
+kind = "conversion"
+section = "3.2"
+note = "A paragraph or heading left without text or image is left out without a report of its own."

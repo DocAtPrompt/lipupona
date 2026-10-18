@@ -1,0 +1,2 @@
+stripped-region
+dropped-element
