@@ -82,11 +82,11 @@ HTML underneath, because that is what my notes needed.
 
 ## Status
 
-Version 0.2.0, a draft for review.
+Version 0.3.0, a draft for review.
 
 - [`SPEC.md`](SPEC.md) — the specification
 - [`profiles/reference.md`](profiles/reference.md) — the reference profile
-- [`tests/`](tests/) — the test suite, 357 cases in a language-neutral format
+- [`tests/`](tests/) — the test suite, 358 cases in a language-neutral format
 - [`docs/converters.md`](docs/converters.md) — work plan for md2lipupona and
   html2lipupona; [`converters/md2lipupona`](converters/md2lipupona) converts
   CommonMark, GFM and Obsidian's Markdown,
