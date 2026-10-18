@@ -894,7 +894,9 @@ Details:
   One that is not taken is text lines (§5.2) from its first line to its last:
   it continues a paragraph before it, a blank line inside it ends the
   paragraph, and what follows its end tag on its last line is read on, as
-  notation, in the same paragraph. A start tag without its matching end tag
+  notation, in the same paragraph. One that is taken ends at its end tag:
+  what follows the end tag on its last line is read on as notation, as if it
+  began a line of its own. A start tag without its matching end tag
   begins no fragment: the tag is literal text and reported, and what follows
   it is read as usual. The writer escapes every `<` in literal text that begins
   something shaped like a tag — `<` followed by a letter, `/` or `!` —
