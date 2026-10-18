@@ -32,6 +32,8 @@ options:
   -o, --output <file>   write to <file> instead of standard output
   --flavour <name>      from-md: commonmark (default), gfm or obsidian
   --definition-lists    from-md: read `Term` / `: definition` as a list
+  --vault <folder>      from-md on a file: find wikilink targets among the
+                        files of <folder>, which holds the file
   --article             from-html: a web page to keep; navigation, sidebars,
                         comments and the like are stripped and reported
   --document            from-md, from-html: write a whole document, its head
@@ -47,7 +49,8 @@ output.
 A folder is converted into a folder of the same shape: Markdown (from-md)
 or HTML (from-html) files become .html files, other files are copied,
 hidden ones are left out. Wikilinks and embeds find their target among the
-folder's files by name, as in Obsidian; outside a folder they stay text.
+folder's files by name, as in Obsidian; a single file finds them with
+--vault, else they stay text.
 check takes the .html files below a folder.
 
 Exit status: 0 done, 1 check found something, 2 usage or file error.
@@ -95,6 +98,7 @@ struct Args {
     definition_lists: bool,
     article: bool,
     document: bool,
+    vault: Option<String>,
 }
 
 #[derive(Debug)]
@@ -143,6 +147,7 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
         definition_lists: false,
         article: false,
         document: false,
+        vault: None,
     };
     let mut only_files = false;
     while let Some(arg) = it.next() {
@@ -162,6 +167,7 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
             "--" if inline.is_none() => only_files = true,
             "-h" | "--help" if inline.is_none() => return Ok(Parsed::Help),
             "-o" | "--output" => parsed.output = Some(value()?),
+            "--vault" => parsed.vault = Some(value()?),
             "--flavour" => {
                 parsed.flavour = Some(match value()?.as_str() {
                     "commonmark" => Flavour::CommonMark,
@@ -182,6 +188,9 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
     }
     if parsed.definition_lists && command != Command::FromMd {
         return Err(format!("`--definition-lists` is for from-md, not {name}"));
+    }
+    if parsed.vault.is_some() && command != Command::FromMd {
+        return Err(format!("`--vault` is for from-md, not {name}"));
     }
     if parsed.article && command != Command::FromHtml {
         return Err(format!("`--article` is for from-html, not {name}"));
@@ -214,6 +223,10 @@ fn run(args: &Args) -> ExitCode {
             );
             return ExitCode::from(2);
         }
+        if args.vault.is_some() {
+            eprintln!("lipupona: `--vault` is for a single file; a folder finds its own links");
+            return ExitCode::from(2);
+        }
         return tree(args, Path::new(path));
     }
     let src = match read(path) {
@@ -223,13 +236,46 @@ fn run(args: &Args) -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let (text, notes) = convert(args, path, &src, None);
+    let vault = match args.vault.as_deref().map(|v| vault(v, path)).transpose() {
+        Ok(found) => found,
+        Err(message) => {
+            eprintln!("lipupona: {message}");
+            return ExitCode::from(2);
+        }
+    };
+    let resolve = |target: &str| {
+        let (index, rel) = vault.as_ref()?;
+        index.resolve(rel, target)
+    };
+    let resolver: md2lipupona::Resolver = &resolve;
+    let (text, notes) = convert(args, path, &src, vault.is_some().then_some(resolver));
     let target = args.output.as_deref();
     let written = write_out(target, &text);
     for note in notes {
         eprintln!("{}: {note}", shown(path));
     }
     finish(written, target.unwrap_or("-"))
+}
+
+/// The files of the folder `vault` and the place of `path` among them.
+fn vault(vault: &str, path: &str) -> Result<(folder::Index, PathBuf), String> {
+    if path == "-" {
+        return Err("`--vault` needs a file that lies in it, not standard input".into());
+    }
+    let root = Path::new(vault)
+        .canonicalize()
+        .ok()
+        .filter(|r| r.is_dir())
+        .ok_or(format!("{vault}: not a folder"))?;
+    let file = Path::new(path)
+        .canonicalize()
+        .map_err(|e| format!("{path}: {e}"))?;
+    let rel = file
+        .strip_prefix(&root)
+        .map_err(|_| format!("{path} does not lie in the vault {vault}"))?
+        .to_path_buf();
+    let files = folder::walk(&root, &mut Vec::new()).map_err(|e| format!("{vault}: {e}"))?;
+    Ok((folder::Index::new(&files), rel))
 }
 
 /// Converts every file below `input` that the command reads into the same

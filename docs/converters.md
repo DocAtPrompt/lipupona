@@ -202,7 +202,12 @@ by the end of its path (`Labor/Ferritin`); where several match, the
 shortest path wins. The `href` is relative to the page being converted,
 with `.md` turned into `.html`; a section after `#` is dropped, since
 headings carry no ids. The folder is mirrored: other files are copied,
-hidden ones (`.obsidian`) left out. A single file has no resolver.
+hidden ones (`.obsidian`) left out. A single file has a resolver when
+`--vault <folder>` names a folder it lies in (2026-10-18): the folder's
+files are found as above, and the `href` is the one the file would get
+were the folder converted. A file outside that folder, standard input, or
+a folder given with `--vault` is a usage error; without `--vault` a single
+file has no resolver.
 
 **Template:** the author's earlier Markdown importer (konsona-2, not public)
 already covers most of the Obsidian flavour and has its own loss report. It

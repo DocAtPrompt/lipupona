@@ -170,6 +170,8 @@ fn usage_errors_exit_with_2() {
         &["display", "--document"],
         &["from-html", "--definition-lists"],
         &["from-md", "--article"],
+        &["from-html", "--vault", "."],
+        &["from-md", "--vault", "."],
         &["html", "a", "b"],
         &["check", "-o", "x"],
         &["from-md", "--flavour", "wiki"],
@@ -228,4 +230,29 @@ fn a_folder_becomes_a_folder_with_links_between_its_pages() {
     assert_eq!(inside.code, 2);
     assert_eq!(run(&["from-md", v], "").code, 2);
     assert_eq!(run(&["display", v], "").code, 2);
+}
+
+#[test]
+fn a_file_finds_its_links_in_a_vault() {
+    let vault = scratch("single-vault");
+    let _ = std::fs::remove_dir_all(&vault);
+    std::fs::create_dir_all(vault.join("Labor")).unwrap();
+    let ferritin = vault.join("Labor/Ferritin.md");
+    std::fs::write(&ferritin, "Siehe [[Eisenmangel]] und [[Fehlt]].\n").unwrap();
+    std::fs::write(vault.join("Eisenmangel.md"), "Häufig.\n").unwrap();
+    let (v, f) = (vault.to_str().unwrap(), ferritin.to_str().unwrap());
+    let out = run(&["from-md", "--flavour", "obsidian", "--vault", v, f], "");
+    assert_eq!(out.code, 0);
+    assert_eq!(
+        out.stdout,
+        "<p>Siehe <a href=\"../Eisenmangel.html\">Eisenmangel</a> und [[Fehlt]].</p>\n"
+    );
+    assert_eq!(out.stderr, format!("{f}: unresolved-link: [[Fehlt]]\n"));
+    let outside = scratch("outside.md");
+    std::fs::write(&outside, "[[Eisenmangel]]\n").unwrap();
+    let outside = run(&["from-md", "--vault", v, outside.to_str().unwrap()], "");
+    assert_eq!(outside.code, 2);
+    assert!(outside.stderr.contains("does not lie in the vault"));
+    let folder = run(&["from-md", "--vault", v, v, "-o", "x"], "");
+    assert_eq!(folder.code, 2);
 }
