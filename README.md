@@ -97,8 +97,12 @@ Version 0.2.0, a draft for review.
 - `src/` — the reference implementation in Rust: `canon`, `html` (reading
   notation) and `display` (writing it). It passes the whole suite; property
   tests check L1, L2 and L4 on generated documents. `cargo test` runs
-  everything; `cargo run --example display -- page.html` shows a page's
-  notation.
+  everything.
+- [`cli/`](cli/) — the `lipupona` command over the library and the
+  converters: `canon`, `display`, `html`, `from-md`, `from-html` and
+  `check` (for stored files). `cargo install --path cli` installs it;
+  `lipupona display page.html` shows a page's notation, `lipupona --help`
+  the rest.
 
 The first application is konsona, which stores its pages as HTML files.
 

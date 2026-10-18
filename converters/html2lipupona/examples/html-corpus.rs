@@ -2,14 +2,14 @@
 //! the laws of SPEC §9.2: canonical (L4), in the profile, and read back from
 //! its display (L1). Prints what fails and a tally of the report codes.
 //!
-//! `cargo run -p html2lipupona --example corpus -- <folder>`
+//! `cargo run -p html2lipupona --example html-corpus -- <folder>`
 
 use std::collections::BTreeMap;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
     let Some(dir) = std::env::args().nth(1) else {
-        eprintln!("usage: corpus <folder>");
+        eprintln!("usage: html-corpus <folder>");
         return ExitCode::FAILURE;
     };
     let mut files: Vec<_> = match std::fs::read_dir(&dir) {

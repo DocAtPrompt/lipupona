@@ -25,6 +25,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lipupona-cli"
+version = "0.1.0"
+dependencies = [
+ "html2lipupona",
+ "lipupona",
+ "md2lipupona",
+]
+
+[[package]]
 name = "lipupona-convert"
 version = "0.1.0"
 dependencies = [

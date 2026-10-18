@@ -2,7 +2,9 @@
 
 **Status: steps 1 to 3 of §5 are built** (`converters/md2lipupona`,
 flavours `commonmark`, `gfm` and `obsidian`; `converters/html2lipupona`,
-mode *export*); mode *article* is planned. **Informative, not part of the
+mode *export*); mode *article* is planned. The command `lipupona` (`cli/`)
+runs both: `from-md` and `from-html`, with `--document` for a whole
+document whose head it writes from the returned values. **Informative, not part of the
 format.** The converters use the core library (reader, writer,
 canonicaliser). Nothing here changes `SPEC.md`.
 
