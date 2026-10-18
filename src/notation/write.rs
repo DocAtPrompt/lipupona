@@ -867,6 +867,20 @@ impl<'p> Writer<'p> {
             }
             s.push(ch);
         }
+        // A backslash put in can make a line that begins with `|` open a
+        // table (`|==\===`); W2 asks of the line as written.
+        if mode == Mode::Paragraph {
+            let mut at = 0;
+            while at < s.len() {
+                let end = s[at..].find('\n').map_or(s.len(), |k| at + k);
+                if s[at..].starts_with('|')
+                    && block::opener(self.profile, &s[at..end], false).is_some()
+                {
+                    s.insert(at, '\\');
+                }
+                at = s[at..].find('\n').map_or(s.len(), |k| at + k + 1);
+            }
+        }
         match mode {
             Mode::Cell => {
                 if s == "^" || s == "<" || s.starts_with("= ") || s == "=" {

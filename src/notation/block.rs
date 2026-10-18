@@ -685,6 +685,7 @@ impl<'p> Reader<'p> {
         if info == "{=html}" || info == "=html" {
             let nodes = html::parse(&content);
             let nodes = self.profile.check(&content, nodes, &mut self.diags);
+            let nodes: Vec<Node> = nodes.into_iter().filter(|n| !n.is_blank_text()).collect();
             let src = self.joined(&lines[i + 1..end]);
             let starts: Vec<usize> = src.text.char_indices().map(|(b, _)| b).collect();
             let source = |b: usize| {
@@ -694,7 +695,7 @@ impl<'p> Reader<'p> {
                     .flatten()
             };
             self.mark_html(&nodes, &content, &source);
-            out.extend(nodes.into_iter().filter(|n| !n.is_blank_text()));
+            out.extend(nodes);
         } else {
             let mut attrs = Vec::new();
             if !info.is_empty() {
