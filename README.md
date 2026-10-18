@@ -82,7 +82,7 @@ HTML underneath, because that is what my notes needed.
 
 ## Status
 
-Version 0.3.0, a draft for review.
+Version 0.4.0, a draft for review.
 
 - [`SPEC.md`](SPEC.md) — the specification
 - [`profiles/reference.md`](profiles/reference.md) — the reference profile
