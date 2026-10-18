@@ -23,6 +23,7 @@ commands:
   canon       canonical HTML of the body of an HTML file (SPEC §4)
   display     the notation of an HTML file (SPEC §5)
   html        the canonical HTML of a notation file (SPEC §5, §6)
+  spans       the spans of a notation file for an editor (SPEC §5.14)
   from-md     Markdown to canonical HTML (docs/converters.md §2)
   from-html   HTML exported by an editor to canonical HTML (§3)
   check       report HTML files that are not canonical or leave the profile
@@ -57,6 +58,7 @@ enum Command {
     Canon,
     Display,
     Html,
+    Spans,
     FromMd,
     FromHtml,
     Check,
@@ -68,6 +70,7 @@ impl Command {
             Command::Canon => "canon",
             Command::Display => "display",
             Command::Html => "html",
+            Command::Spans => "spans",
             Command::FromMd => "from-md",
             Command::FromHtml => "from-html",
             Command::Check => "check",
@@ -126,6 +129,7 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
         Some("canon") => Command::Canon,
         Some("display") => Command::Display,
         Some("html") => Command::Html,
+        Some("spans") => Command::Spans,
         Some("from-md") => Command::FromMd,
         Some("from-html") => Command::FromHtml,
         Some("check") => Command::Check,
@@ -358,6 +362,18 @@ fn convert(
         Command::Canon => core(lipupona::canon(src)),
         Command::Display => core(lipupona::display(src)),
         Command::Html => core(lipupona::html(src)),
+        Command::Spans => {
+            let mut out = String::new();
+            for span in lipupona::spans(src) {
+                let kind = format!("{:?}", span.kind).to_lowercase();
+                let text = src.get(span.range.clone()).unwrap_or("");
+                out.push_str(&format!(
+                    "{kind:<9} {:>5}..{:<5} {text:?}\n",
+                    span.range.start, span.range.end
+                ));
+            }
+            (out, Vec::new())
+        }
         Command::FromMd => {
             let settings = md2lipupona::Settings {
                 flavour: args.flavour.unwrap_or_default(),

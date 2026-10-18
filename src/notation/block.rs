@@ -4,6 +4,7 @@
 use super::inline::{self, Inline, element, from_selector, text};
 use super::syntax;
 use super::table;
+use super::track::{Mark, Src, Track};
 use crate::diag::{Code, Diagnostic};
 use crate::dom::{Attr, Element, Node};
 use crate::html;
@@ -12,6 +13,8 @@ use crate::profile::{Kind, Model, Profile};
 pub(crate) struct Reader<'p> {
     pub profile: &'p Profile,
     pub diags: Vec<Diagnostic>,
+    /// What is recorded for an editor's spans, when it is asked for.
+    pub track: Option<Track>,
     /// Elements open around what is being read. From `html::MAX_DEPTH` on
     /// nothing more is opened: what would open an element is text.
     depth: usize,
@@ -23,24 +26,25 @@ pub(crate) struct Reader<'p> {
 /// The text lines of the paragraph being collected: as the inline reader
 /// reads them, and as they were typed.
 #[derive(Default)]
-struct Para {
-    lines: Vec<String>,
-    typed: Vec<String>,
+struct Para<'a> {
+    lines: Vec<Src>,
+    typed: Vec<&'a str>,
 }
 
-impl Para {
-    fn push(&mut self, line: String) {
-        self.typed.push(line.clone());
-        self.lines.push(line);
+impl<'a> Para<'a> {
+    /// A line that reads as it was typed.
+    fn push(&mut self, line: &'a str, track: Option<&Track>) {
+        self.lines.push(Src::of(line, track));
+        self.typed.push(line);
     }
 
     /// A line of literal text: `line` reads as `typed`.
-    fn push_literal(&mut self, line: String, typed: String) {
+    fn push_literal(&mut self, line: Src, typed: &'a str) {
         self.lines.push(line);
         self.typed.push(typed);
     }
 
-    fn pop(&mut self) -> Option<(String, String)> {
+    fn pop(&mut self) -> Option<(Src, &'a str)> {
         Some((self.lines.pop()?, self.typed.pop()?))
     }
 
@@ -72,8 +76,9 @@ fn tree_depth(nodes: &[Node]) -> usize {
 /// suffix of its line here.
 struct Joined {
     text: String,
-    /// Byte offset of each line.
+    /// Byte offset of each line, and where it begins in the notation.
     starts: Vec<usize>,
+    sources: Vec<Option<usize>>,
     /// Where `-->` begins, in order.
     dashes: Vec<usize>,
     /// Ends of typed fragments per tag name (`html::fragment_len_in`).
@@ -81,7 +86,7 @@ struct Joined {
 }
 
 impl Joined {
-    fn new(lines: &[String]) -> Self {
+    fn new(lines: &[&str], track: Option<&Track>) -> Self {
         let text = lines.join("\n");
         let mut starts = Vec::with_capacity(lines.len());
         let mut at = 0;
@@ -89,10 +94,15 @@ impl Joined {
             starts.push(at);
             at += line.len() + 1;
         }
+        let sources = lines
+            .iter()
+            .map(|l| track.and_then(|t| t.offset(l)))
+            .collect();
         let dashes = text.match_indices("-->").map(|(k, _)| k).collect();
         Joined {
             text,
             starts,
+            sources,
             dashes,
             ends: std::collections::HashMap::new(),
         }
@@ -104,57 +114,50 @@ impl Joined {
         let end = self.starts.get(i + 1).map_or(self.text.len(), |&s| s - 1);
         end - line.trim_start_matches(SP).len()
     }
+
+    /// Where the byte `at` of the text is in the notation.
+    fn source(&self, at: usize) -> Option<usize> {
+        let line = self.starts.partition_point(|&s| s <= at).checked_sub(1)?;
+        Some(self.sources[line]? + at - self.starts[line])
+    }
 }
 
 /// A comment or typed HTML block found at a line, before it is taken.
-enum Found {
+enum Found<'a> {
     Comment(String, usize),
-    Typed(Vec<Node>, usize, Option<String>),
+    Typed(Vec<Node>, usize, Option<&'a str>),
     /// A typed block that is closed but not taken (§6): its lines, as the
     /// inline reader reads them (nothing in them is notation, then what
     /// follows its end tag) and as typed; and the diagnostic.
-    Literal(Vec<(String, String)>, Diagnostic),
+    Literal(Vec<(Src, &'a str)>, Diagnostic),
 }
 
 /// Lines `from..to` of a context without their indentation.
-fn input_lines(lines: &[String], from: usize, to: usize) -> Vec<String> {
+fn input_lines<'a>(lines: &[&'a str], from: usize, to: usize) -> Vec<&'a str> {
     lines[from..to.min(lines.len())]
         .iter()
-        .map(|l| l.trim_start_matches(SP).to_string())
+        .map(|l| l.trim_start_matches(SP))
         .collect()
-}
-
-/// Text that the inline reader reads as it is written: a backslash before
-/// every ASCII punctuation character (§5.12).
-fn literal(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() * 2);
-    for ch in s.chars() {
-        if ch.is_ascii_punctuation() {
-            out.push('\\');
-        }
-        out.push(ch);
-    }
-    out
 }
 
 /// What a line opens (§5.2), seen without its indentation.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum Opener {
+pub(crate) enum Opener<'a> {
     Fence {
         ch: char,
         len: usize,
-        info: String,
+        info: &'a str,
     },
     Comment,
     TypedBlock,
     Container {
         len: usize,
-        spec: String,
+        spec: &'a str,
     },
     AttrLine(Vec<(String, String)>),
     Heading {
         level: usize,
-        text: String,
+        text: &'a str,
     },
     Hr,
     Quote,
@@ -162,11 +165,11 @@ pub(crate) enum Opener {
     CellTable,
     Item {
         number: Option<u64>,
-        content: String,
+        content: &'a str,
     },
     /// `: ` or `:` alone: a definition, if a one-line paragraph is above it
     /// (§5.6.1).
-    Definition(String),
+    Definition(&'a str),
     ElementLine(syntax::Selector),
 }
 
@@ -188,7 +191,7 @@ pub(crate) fn indent_width(line: &str) -> usize {
 }
 
 /// Removes up to `width` columns of indentation.
-pub(crate) fn dedent(line: &str, width: usize) -> String {
+pub(crate) fn dedent(line: &str, width: usize) -> &str {
     let mut w = 0;
     let mut cut = 0;
     for (i, ch) in line.char_indices() {
@@ -202,7 +205,7 @@ pub(crate) fn dedent(line: &str, width: usize) -> String {
         }
         cut = i + ch.len_utf8();
     }
-    line[cut..].to_string()
+    &line[cut..]
 }
 
 pub(crate) fn is_blank(line: &str) -> bool {
@@ -211,18 +214,14 @@ pub(crate) fn is_blank(line: &str) -> bool {
 
 /// What `rest` (a line without indentation) opens; None for a text line.
 /// `figure` admits an `img` element line (§5.4.4).
-pub(crate) fn opener(profile: &Profile, rest: &str, figure: bool) -> Option<Opener> {
+pub(crate) fn opener<'a>(profile: &Profile, rest: &'a str, figure: bool) -> Option<Opener<'a>> {
     let c: Vec<char> = rest.chars().collect();
     let first = *c.first()?;
     let run = |ch: char| c.iter().take_while(|&&x| x == ch).count();
     match first {
         '`' | '~' if run(first) >= 3 => {
             let len = run(first);
-            let info: String = c[len..]
-                .iter()
-                .collect::<String>()
-                .trim_matches(SP)
-                .to_string();
+            let info = rest[len..].trim_matches(SP);
             if first == '`' && info.contains('`') {
                 return None;
             }
@@ -251,18 +250,14 @@ pub(crate) fn opener(profile: &Profile, rest: &str, figure: bool) -> Option<Open
             (!name.is_empty() && boundary && profile.kind(&name) == Some(Kind::Block))
                 .then_some(Opener::TypedBlock)
         }
-        ':' if c.len() == 1 || c.get(1) == Some(&' ') => Some(Opener::Definition(
-            c.get(2..).map(|r| r.iter().collect()).unwrap_or_default(),
-        )),
+        ':' if c.len() == 1 || c.get(1) == Some(&' ') => {
+            Some(Opener::Definition(rest.get(2..).unwrap_or("")))
+        }
         ':' if run(':') >= 3 => {
             let len = run(':');
             Some(Opener::Container {
                 len,
-                spec: c[len..]
-                    .iter()
-                    .collect::<String>()
-                    .trim_matches(SP)
-                    .to_string(),
+                spec: rest[len..].trim_matches(SP),
             })
         }
         '{' => syntax::brace_attributes(rest).map(Opener::AttrLine),
@@ -271,11 +266,7 @@ pub(crate) fn opener(profile: &Profile, rest: &str, figure: bool) -> Option<Open
             match c.get(level) {
                 Some(' ') => Some(Opener::Heading {
                     level,
-                    text: c[level + 1..]
-                        .iter()
-                        .collect::<String>()
-                        .trim_matches(SP)
-                        .to_string(),
+                    text: rest[level + 1..].trim_matches(SP),
                 }),
                 _ => None,
             }
@@ -283,7 +274,7 @@ pub(crate) fn opener(profile: &Profile, rest: &str, figure: bool) -> Option<Open
         '-' if rest.trim_end_matches(SP) == "---" => Some(Opener::Hr),
         '-' if c.len() == 1 || c.get(1) == Some(&' ') => Some(Opener::Item {
             number: None,
-            content: c.get(2..).map(|r| r.iter().collect()).unwrap_or_default(),
+            content: rest.get(2..).unwrap_or(""),
         }),
         '>' => Some(Opener::Quote),
         '|' if rest.starts_with("|===") => {
@@ -302,10 +293,7 @@ pub(crate) fn opener(profile: &Profile, rest: &str, figure: bool) -> Option<Open
                     let number: String = c[..digits].iter().collect();
                     Some(Opener::Item {
                         number: Some(number.parse().unwrap_or(u64::MAX)),
-                        content: c
-                            .get(digits + 2..)
-                            .map(|r| r.iter().collect())
-                            .unwrap_or_default(),
+                        content: rest.get(digits + 2..).unwrap_or(""),
                     })
                 }
                 _ => None,
@@ -336,6 +324,7 @@ impl<'p> Reader<'p> {
         Reader {
             profile,
             diags: Vec::new(),
+            track: None,
             depth: 0,
             too_deep: false,
         }
@@ -349,24 +338,110 @@ impl<'p> Reader<'p> {
         out
     }
 
+    /// `s`, a slice of the notation, as phrasing to read.
+    pub(crate) fn src(&self, s: &str) -> Src {
+        Src::of(s, self.track.as_ref())
+    }
+
+    /// Lines, slices of the notation, joined as phrasing to read.
+    fn joined(&self, lines: &[&str]) -> Src {
+        let track = self.track.as_ref();
+        let parts = lines
+            .iter()
+            .map(|l| (self.src(l), track.and_then(|t| t.line_end(l))))
+            .collect();
+        Src::join(parts, track)
+    }
+
+    /// How many records there are, to go back to when a reading is undone.
+    fn checkpoint(&self) -> usize {
+        self.track.as_ref().map_or(0, |t| t.marks.len())
+    }
+
+    fn undo(&mut self, checkpoint: usize) {
+        if let Some(t) = &mut self.track {
+            t.marks.truncate(checkpoint);
+        }
+    }
+
+    /// Records lines that are text as they are (code), with the line feeds
+    /// between them.
+    fn mark_text_lines(&mut self, lines: &[&str]) {
+        let Some(t) = &mut self.track else {
+            return;
+        };
+        for (k, line) in lines.iter().enumerate() {
+            t.mark_slice(line, Mark::Content);
+            if k + 1 < lines.len()
+                && let Some(lf) = t.line_end(line)
+            {
+                t.mark(lf, lf + 1, Mark::Content);
+            }
+        }
+    }
+
+    /// Records the text of parsed HTML whose byte `b` is at `source(b)` in
+    /// the notation.
+    fn mark_html(
+        &mut self,
+        nodes: &[Node],
+        fragment: &str,
+        source: &dyn Fn(usize) -> Option<usize>,
+    ) {
+        if self.track.is_none() {
+            return;
+        }
+        for node in nodes {
+            match node {
+                Node::Text(t) => {
+                    let Some(text) = fragment.get(t.span.clone()) else {
+                        continue;
+                    };
+                    for (b, ch) in text.char_indices() {
+                        if let (Some(o), Some(track)) = (source(t.span.start + b), &mut self.track)
+                        {
+                            track.mark(o, o + ch.len_utf8(), Mark::Content);
+                        }
+                    }
+                }
+                Node::Element(e) => self.mark_html(&e.children, fragment, source),
+                _ => {}
+            }
+        }
+    }
+
     /// The phrasing content of an element open at the current depth.
-    pub(crate) fn phrasing(&mut self, s: &str) -> Vec<Node> {
+    pub(crate) fn phrasing(&mut self, s: &Src) -> Vec<Node> {
         let mut r = Inline::within(self.profile, self.depth, self.too_deep);
-        let nodes = inline::unwrap_fragments(r.read(s));
+        if self.track.is_some() {
+            r.at = s.at.clone();
+        }
+        let nodes = inline::unwrap_fragments(r.read(&s.text));
         self.too_deep = r.too_deep;
         self.diags.append(&mut r.diags);
+        if let Some(t) = &mut self.track {
+            for (from, to, mark) in r.marks {
+                t.mark(from, to, mark);
+            }
+        }
         nodes
     }
 
-    fn paragraph(&mut self, lines: &[String]) -> Node {
-        let text: Vec<&str> = lines.iter().map(|l| l.trim_start_matches(SP)).collect();
-        let children = self.inside(1, |r| r.phrasing(&text.join("\n")));
+    fn paragraph(&mut self, lines: &[Src], typed: &[&str]) -> Node {
+        let track = self.track.as_ref();
+        let parts = lines
+            .iter()
+            .zip(typed)
+            .map(|(l, t)| (l.clone(), track.and_then(|tr| tr.line_end(t))))
+            .collect();
+        let text = Src::join(parts, track);
+        let children = self.inside(1, |r| r.phrasing(&text));
         element("p", Vec::new(), children)
     }
 
     /// Reads the lines of one context, already without its indentation.
-    pub(crate) fn blocks(&mut self, input: &[String], figure: bool) -> Vec<Node> {
-        let mut lines: Vec<String> = input.to_vec();
+    pub(crate) fn blocks<'a>(&mut self, input: &[&'a str], figure: bool) -> Vec<Node> {
+        let mut lines: Vec<&'a str> = input.to_vec();
         let capped = self.depth >= html::MAX_DEPTH;
         if capped && lines.iter().any(|l| !is_blank(l)) {
             self.too_deep = true;
@@ -377,17 +452,17 @@ impl<'p> Reader<'p> {
         let mut joined: Option<Joined> = None;
         let mut i = 0;
         while i < lines.len() {
-            if is_blank(&lines[i]) {
+            if is_blank(lines[i]) {
                 self.flush(&mut para, &mut out, &mut pending);
                 i += 1;
                 continue;
             }
-            let rest = lines[i].trim_start_matches(SP).to_string();
+            let rest: &'a str = lines[i].trim_start_matches(SP);
             let op = (!capped)
-                .then(|| opener(self.profile, &rest, figure))
+                .then(|| opener(self.profile, rest, figure))
                 .flatten();
             let Some(op) = op else {
-                para.push(rest);
+                para.push(rest, self.track.as_ref());
                 i += 1;
                 continue;
             };
@@ -400,20 +475,21 @@ impl<'p> Reader<'p> {
                     i += 1;
                     continue;
                 }
-                para.push(rest);
+                para.push(rest, self.track.as_ref());
                 i += 1;
                 continue;
             }
             // A definition needs a one-line paragraph above it, its term.
             if matches!(op, Opener::Definition(_)) && para.len() != 1 {
-                para.push(rest);
+                para.push(rest, self.track.as_ref());
                 i += 1;
                 continue;
             }
             // What only looks like a comment or typed HTML block is text.
             let found = match &op {
                 Opener::Comment | Opener::TypedBlock => {
-                    let joined = joined.get_or_insert_with(|| Joined::new(input));
+                    let joined =
+                        joined.get_or_insert_with(|| Joined::new(input, self.track.as_ref()));
                     match op {
                         Opener::Comment => self.block_comment(joined, &lines, i),
                         _ => self.typed_block(joined, &lines, i),
@@ -426,7 +502,7 @@ impl<'p> Reader<'p> {
                 self.diags.push(diag);
                 i += text_lines.len();
                 for (line, typed) in text_lines {
-                    if is_blank(&typed) {
+                    if is_blank(typed) {
                         self.flush(&mut para, &mut out, &mut pending);
                     } else {
                         para.push_literal(line, typed);
@@ -440,7 +516,7 @@ impl<'p> Reader<'p> {
                 _ => true,
             };
             if !taken {
-                para.push(rest);
+                para.push(rest, self.track.as_ref());
                 i += 1;
                 continue;
             }
@@ -451,31 +527,33 @@ impl<'p> Reader<'p> {
                 self.flush(&mut para, &mut out, &mut pending);
                 None
             };
-            let caption_typed = caption.as_ref().map(|(_, typed)| typed.clone());
+            let caption_typed = caption.as_ref().map(|&(_, typed)| typed);
             let caption = caption.map(|(line, _)| line);
             let before = out.len();
             let line_before = i;
+            let marks_before = self.checkpoint();
             let top = self.depth == 0;
             if top {
                 self.too_deep = false;
             }
             i = match found {
                 Some(found) => self.take_found(found, &mut lines, i, &mut out),
-                None => self.take(op, &mut lines, i, &rest, caption, &mut out),
+                None => self.take(op, &mut lines, i, rest, caption, &mut out),
             };
             // A top-level block that would be too deep stays text as a
             // whole (§3.4): its lines, as typed, are text lines.
             if top && (self.too_deep || tree_depth(&out[before..]) > html::MAX_DEPTH) {
                 out.truncate(before);
+                self.undo(marks_before);
                 self.diags.push(html::too_deep());
                 let typed = caption_typed
                     .into_iter()
                     .chain(input_lines(&lines, line_before, i));
                 for line in typed {
-                    if is_blank(&line) {
+                    if is_blank(line) {
                         self.flush(&mut para, &mut out, &mut pending);
                     } else {
-                        para.push_literal(literal(&line), line);
+                        para.push_literal(Src::literal(line, self.track.as_ref()), line);
                     }
                 }
                 continue;
@@ -489,7 +567,8 @@ impl<'p> Reader<'p> {
             // its line as text.
             if i == line_before {
                 out.truncate(before);
-                para.push(lines[i].trim_start_matches(SP).to_string());
+                self.undo(marks_before);
+                para.push(lines[i].trim_start_matches(SP), self.track.as_ref());
                 i += 1;
             }
         }
@@ -500,24 +579,24 @@ impl<'p> Reader<'p> {
     /// Reads the construct `op` opens at `lines[i]` into `out`; returns the
     /// index of the next line. Every construct that nests has a method of its
     /// own, so that a level of nesting costs little stack.
-    fn take(
+    fn take<'a>(
         &mut self,
-        op: Opener,
-        lines: &mut [String],
+        op: Opener<'a>,
+        lines: &mut [&'a str],
         i: usize,
-        rest: &str,
-        caption: Option<String>,
+        rest: &'a str,
+        caption: Option<Src>,
         out: &mut Vec<Node>,
     ) -> usize {
         match op {
-            Opener::Fence { ch, len, info } => self.fence(lines, i, ch, len, &info, out),
+            Opener::Fence { ch, len, info } => self.fence(lines, i, ch, len, info, out),
             // Found before, and taken by `take_found`.
             Opener::Comment | Opener::TypedBlock => i,
-            Opener::Container { len, spec } => self.fenced_container(lines, i, len, &spec, out),
+            Opener::Container { len, spec } => self.fenced_container(lines, i, len, spec, out),
             // Taken before; a line that only looks like one stays text.
             Opener::AttrLine(_) => i,
             Opener::Heading { level, text: t } => {
-                out.push(self.heading(level, &t));
+                out.push(self.heading(level, t));
                 i + 1
             }
             Opener::Hr => {
@@ -552,10 +631,10 @@ impl<'p> Reader<'p> {
     }
 
     /// Takes a comment or typed HTML block found at `lines[i]`.
-    fn take_found(
+    fn take_found<'a>(
         &mut self,
-        found: Found,
-        lines: &mut [String],
+        found: Found<'a>,
+        lines: &mut [&'a str],
         i: usize,
         out: &mut Vec<Node>,
     ) -> usize {
@@ -588,7 +667,7 @@ impl<'p> Reader<'p> {
     /// §5.10: a fenced code block, or HTML in a fence.
     fn fence(
         &mut self,
-        lines: &[String],
+        lines: &[&str],
         i: usize,
         ch: char,
         len: usize,
@@ -604,6 +683,15 @@ impl<'p> Reader<'p> {
         if info == "{=html}" || info == "=html" {
             let nodes = html::parse(&content);
             let nodes = self.profile.check(&content, nodes, &mut self.diags);
+            let src = self.joined(&lines[i + 1..end]);
+            let starts: Vec<usize> = src.text.char_indices().map(|(b, _)| b).collect();
+            let source = |b: usize| {
+                let k = starts.partition_point(|&s| s < b);
+                (starts.get(k) == Some(&b))
+                    .then(|| src.at.get(k).copied().flatten())
+                    .flatten()
+            };
+            self.mark_html(&nodes, &content, &source);
             out.extend(nodes.into_iter().filter(|n| !n.is_blank_text()));
         } else {
             let mut attrs = Vec::new();
@@ -616,6 +704,7 @@ impl<'p> Reader<'p> {
             let children = if content.is_empty() {
                 Vec::new()
             } else {
+                self.mark_text_lines(&lines[i + 1..end]);
                 vec![text(content)]
             };
             out.push(element("pre", attrs, children));
@@ -626,7 +715,7 @@ impl<'p> Reader<'p> {
     /// A fenced container (§5.4, §7.3) at `lines[i]`.
     fn fenced_container(
         &mut self,
-        lines: &[String],
+        lines: &[&str],
         i: usize,
         len: usize,
         spec: &str,
@@ -671,16 +760,17 @@ impl<'p> Reader<'p> {
         } else {
             level
         };
+        let t = self.src(t);
         let children = self.inside(1, |r| r.phrasing(&t));
         element(&format!("h{level}"), attrs, children)
     }
 
     /// The lines of a blockquote or callout at `lines[i]`, without `>`.
-    fn quote_lines(&mut self, lines: &[String], mut i: usize, out: &mut Vec<Node>) -> usize {
+    fn quote_lines(&mut self, lines: &[&str], mut i: usize, out: &mut Vec<Node>) -> usize {
         let mut inner = Vec::new();
         while i < lines.len() && lines[i].trim_start_matches(SP).starts_with('>') {
             let l = &lines[i].trim_start_matches(SP)[1..];
-            inner.push(l.strip_prefix(' ').unwrap_or(l).to_string());
+            inner.push(l.strip_prefix(' ').unwrap_or(l));
             i += 1;
         }
         out.push(self.quote(&inner));
@@ -690,24 +780,22 @@ impl<'p> Reader<'p> {
     /// §5.4: an element line at `lines[i]` and its indented content.
     fn element_line(
         &mut self,
-        lines: &[String],
+        lines: &[&str],
         i: usize,
         rest: &str,
         sel: &syntax::Selector,
         out: &mut Vec<Node>,
     ) -> usize {
         let mut j = i + 1;
-        while j < lines.len() && (is_blank(&lines[j]) || indent_width(&lines[j]) >= 2) {
+        while j < lines.len() && (is_blank(lines[j]) || indent_width(lines[j]) >= 2) {
             j += 1;
         }
-        while j > i + 1 && is_blank(&lines[j - 1]) {
+        while j > i + 1 && is_blank(lines[j - 1]) {
             j -= 1;
         }
-        let content: Vec<String> = lines[i + 1..j].iter().map(|l| dedent(l, 2)).collect();
+        let content: Vec<&str> = lines[i + 1..j].iter().map(|l| dedent(l, 2)).collect();
         let (name, attrs) = from_selector(sel);
-        let bracket: Option<String> = sel
-            .content
-            .map(|(a, b)| rest.chars().skip(a).take(b - a).collect());
+        let bracket = sel.content.map(|(a, b)| char_slice(rest, a, b));
         let children = self.inside(1, |r| r.content(&name, bracket, &content));
         out.push(element(&name, attrs, children));
         j
@@ -715,8 +803,8 @@ impl<'p> Reader<'p> {
 
     /// A comment block at `lines[i]`: its text and the lines it takes, when
     /// it is closed and nothing follows it on its last line.
-    fn block_comment(&self, joined: &Joined, lines: &[String], i: usize) -> Option<Found> {
-        let from = joined.from(i, &lines[i]);
+    fn block_comment<'a>(&self, joined: &Joined, lines: &[&'a str], i: usize) -> Option<Found<'a>> {
+        let from = joined.from(i, lines[i]);
         let body = joined.text[from..].strip_prefix("<!--")?;
         let k =
             joined.dashes[joined.dashes.partition_point(|&x| x < from + 4)..].first()? - (from + 4);
@@ -731,8 +819,13 @@ impl<'p> Reader<'p> {
 
     /// A typed HTML block at `lines[i]` that is taken (§6): its nodes, the
     /// lines it takes up to its last, and what follows it on that line.
-    fn typed_block(&self, joined: &mut Joined, lines: &[String], i: usize) -> Option<Found> {
-        let from = joined.from(i, &lines[i]);
+    fn typed_block<'a>(
+        &mut self,
+        joined: &mut Joined,
+        lines: &[&'a str],
+        i: usize,
+    ) -> Option<Found<'a>> {
+        let from = joined.from(i, lines[i]);
         let rest = &joined.text[from..];
         let name: String = rest[1..]
             .chars()
@@ -742,7 +835,18 @@ impl<'p> Reader<'p> {
         let ends = joined.ends.entry(name).or_default();
         let len = html::fragment_len_in(rest, from, ends)?;
         let fragment = &rest[..len];
-        let remainder = rest[len..].split('\n').next().unwrap_or("").to_string();
+        let rest_len = rest[len..].split('\n').next().unwrap_or("").len();
+        let used = fragment.matches('\n').count();
+        // The lines the fragment stands on, as typed: the last one with what
+        // follows the fragment.
+        let typed: Vec<&'a str> = (0..=used)
+            .map(|k| match k {
+                0 => lines[i].trim_start_matches(SP),
+                k => lines[i + k],
+            })
+            .collect();
+        let last = typed[used];
+        let remainder = &last[last.len() - rest_len..];
         let nodes = html::parse(fragment);
         let blocked = self
             .profile
@@ -752,19 +856,25 @@ impl<'p> Reader<'p> {
         let nodes: Vec<Node> = nodes.into_iter().filter(|n| !n.is_blank_text()).collect();
         if blocked || nodes.iter().any(|n| matches!(n, Node::Text(_))) {
             // Not taken: literal text as a whole, to its end tag (§6).
-            let mut text_lines: Vec<(String, String)> = fragment
-                .split('\n')
-                .map(|l| (literal(l), l.to_string()))
+            let track = self.track.as_ref();
+            let text_lines = typed
+                .iter()
+                .enumerate()
+                .map(|(k, &t)| match k == used {
+                    true => {
+                        let cut = t.len() - rest_len;
+                        let mut line = Src::literal(&t[..cut], track);
+                        line.push(Src::of(&t[cut..], track));
+                        (line, t)
+                    }
+                    false => (Src::literal(t, track), t),
+                })
                 .collect();
-            if let Some((line, typed)) = text_lines.last_mut() {
-                line.push_str(&remainder);
-                typed.push_str(&remainder);
-            }
             let first = fragment.split('\n').next().unwrap_or("");
             let diag = Diagnostic::new(Code::HtmlNotTaken, first.to_string());
             return Some(Found::Literal(text_lines, diag));
         }
-        let used = fragment.matches('\n').count();
+        self.mark_html(&nodes, fragment, &|b| joined.source(from + b));
         let remainder = (!remainder.trim_matches(SP).is_empty()).then_some(remainder);
         Some(Found::Typed(nodes, used, remainder))
     }
@@ -783,12 +893,15 @@ impl<'p> Reader<'p> {
         if top {
             self.too_deep = false;
         }
-        let mut p = self.paragraph(&para.lines);
+        let marks_before = self.checkpoint();
+        let mut p = self.paragraph(&para.lines, &para.typed);
         // A top-level paragraph that would be too deep stays text (§3.4).
         if top && (self.too_deep || tree_depth(std::slice::from_ref(&p)) > html::MAX_DEPTH) {
+            self.undo(marks_before);
             self.diags.push(html::too_deep());
-            let lines: Vec<String> = para.typed.iter().map(|l| literal(l)).collect();
-            p = self.paragraph(&lines);
+            let track = self.track.as_ref();
+            let lines: Vec<Src> = para.typed.iter().map(|l| Src::literal(l, track)).collect();
+            p = self.paragraph(&lines, &para.typed);
         }
         if let (Some(attrs), Node::Element(e)) = (pending.take(), &mut p) {
             self.merge(e, attrs);
@@ -846,20 +959,25 @@ impl<'p> Reader<'p> {
     }
 
     /// The children of an element by its content model (§5.4.2, §5.4.3).
-    fn content(&mut self, name: &str, bracket: Option<String>, lines: &[String]) -> Vec<Node> {
+    fn content(&mut self, name: &str, bracket: Option<&str>, lines: &[&str]) -> Vec<Node> {
         let model = self.profile.model(name).unwrap_or(Model::Blocks);
+        let bracket = bracket.map(|b| self.src(b));
         match model {
             Model::Void => Vec::new(),
             Model::Phrasing => match bracket {
                 Some(b) => self.phrasing(&b),
                 // Only the level's indentation is removed; the rest is
                 // whitespace C7 collapses, or the text of a comment.
-                None => self.phrasing(&lines.join("\n")),
+                None => {
+                    let text = self.joined(lines);
+                    self.phrasing(&text)
+                }
             },
             Model::Text => {
                 if lines.is_empty() {
                     Vec::new()
                 } else {
+                    self.mark_text_lines(lines);
                     vec![text(lines.join("\n"))]
                 }
             }
@@ -880,7 +998,7 @@ impl<'p> Reader<'p> {
     }
 
     /// §5.7 and §7.3.
-    fn quote(&mut self, inner: &[String]) -> Node {
+    fn quote(&mut self, inner: &[&str]) -> Node {
         if let Some(first) = inner.first()
             && let Some((t, fold, title)) = callout_line(first)
         {
@@ -890,16 +1008,13 @@ impl<'p> Reader<'p> {
         element("blockquote", Vec::new(), children)
     }
 
-    fn callout(
-        &mut self,
-        t: &str,
-        fold: Option<char>,
-        title: Option<String>,
-        rest: &[String],
-    ) -> Node {
+    fn callout(&mut self, t: &str, fold: Option<char>, title: Option<&str>, rest: &[&str]) -> Node {
         let title = title
             .filter(|s| !s.trim_matches(SP).is_empty())
-            .map(|title| self.inside(1, |r| r.phrasing(&title)));
+            .map(|title| {
+                let title = self.src(title);
+                self.inside(1, |r| r.phrasing(&title))
+            });
         let content = self.blocks(rest, false);
         let (node, diag) = self.profile.callout(t, fold, title, content);
         self.diags.extend(diag);
@@ -909,7 +1024,7 @@ impl<'p> Reader<'p> {
     /// The content of a list item or definition (content model *lead*):
     /// its lines read as blocks, a leading paragraph unwrapped when the first
     /// line opens no block.
-    fn item(&mut self, body: &[String]) -> Vec<Node> {
+    fn item(&mut self, body: &[&str]) -> Vec<Node> {
         let first = body[0].trim_start_matches(SP);
         let lead = !first.trim_matches(SP).is_empty()
             && matches!(
@@ -932,25 +1047,24 @@ impl<'p> Reader<'p> {
 
     /// §5.6.1: a definition list whose first definition is at `lines[start]`,
     /// below `term`.
-    fn definition_list(&mut self, lines: &[String], start: usize, term: String) -> (Node, usize) {
-        let base = indent_width(&lines[start]);
+    fn definition_list(&mut self, lines: &[&str], start: usize, term: Src) -> (Node, usize) {
+        let base = indent_width(lines[start]);
         let at_level = |line: &str| indent_width(line) < base + 2;
-        let def_at = |line: &str| -> Option<String> {
-            if !at_level(line) {
-                return None;
-            }
-            match opener(self.profile, line.trim_start_matches(SP), false) {
-                Some(Opener::Definition(content)) => Some(content),
-                _ => None,
-            }
+        let profile = self.profile;
+        let def_at = |line: &str| -> bool {
+            at_level(line)
+                && matches!(
+                    opener(profile, line.trim_start_matches(SP), false),
+                    Some(Opener::Definition(_))
+                )
         };
         // A term: a text line directly followed by a definition.
         let term_at = |k: usize| -> bool {
-            let line = &lines[k];
+            let line = lines[k];
             !is_blank(line)
                 && at_level(line)
-                && opener(self.profile, line.trim_start_matches(SP), false).is_none()
-                && lines.get(k + 1).is_some_and(|l| def_at(l).is_some())
+                && opener(profile, line.trim_start_matches(SP), false).is_none()
+                && lines.get(k + 1).is_some_and(|l| def_at(l))
         };
         let mut children = Vec::new();
         let mut term = Some(term);
@@ -958,52 +1072,61 @@ impl<'p> Reader<'p> {
         loop {
             if let Some(t) = term.take() {
                 // dl, dt
-                let nodes = self.inside(2, |r| r.phrasing(t.trim_matches(SP)));
+                let nodes = self.inside(2, |r| r.phrasing(&t.trim()));
                 children.push(element("dt", Vec::new(), nodes));
             }
-            while let Some(content) = lines.get(i).and_then(|l| def_at(l)) {
-                let next_item = |l: &str| def_at(l).is_some() || !is_blank(l) && at_level(l);
+            while let Some(line) = lines.get(i).copied().filter(|l| def_at(l)) {
+                let Some(Opener::Definition(content)) =
+                    opener(profile, line.trim_start_matches(SP), false)
+                else {
+                    break;
+                };
+                let next_item = |l: &str| def_at(l) || !is_blank(l) && at_level(l);
                 let (body, next) = item_body(lines, i, base, content, next_item);
                 // dl, dd
                 let nodes = self.inside(2, |r| r.item(&body));
                 children.push(element("dd", Vec::new(), nodes));
                 i = next;
             }
-            let Some(k) = (i..lines.len()).find(|&k| !is_blank(&lines[k])) else {
+            let Some(k) = (i..lines.len()).find(|&k| !is_blank(lines[k])) else {
                 break;
             };
             if !term_at(k) {
                 break;
             }
-            term = Some(lines[k].trim_start_matches(SP).to_string());
+            term = Some(self.src(lines[k].trim_start_matches(SP)));
             i = k + 1;
         }
         // Blank lines after the last definition belong to the context.
-        while i > start && is_blank(&lines[i - 1]) {
+        while i > start && is_blank(lines[i - 1]) {
             i -= 1;
         }
         (element("dl", Vec::new(), children), i)
     }
 
     /// §5.6: a list at `lines[i]`.
-    fn list(&mut self, lines: &[String], start: usize, ordered: bool) -> (Node, usize) {
+    fn list(&mut self, lines: &[&str], start: usize, ordered: bool) -> (Node, usize) {
         // Levels count from the list's own first line.
-        let base = indent_width(&lines[start]);
-        let item_at = |line: &str| -> Option<(Option<u64>, String)> {
+        let base = indent_width(lines[start]);
+        let profile = self.profile;
+        let item_at = |line: &str| -> Option<Option<u64>> {
             if indent_width(line) >= base + 2 {
                 return None;
             }
-            match opener(self.profile, line.trim_start_matches(SP), false) {
-                Some(Opener::Item { number, content }) if number.is_some() == ordered => {
-                    Some((number, content))
-                }
+            match opener(profile, line.trim_start_matches(SP), false) {
+                Some(Opener::Item { number, .. }) if number.is_some() == ordered => Some(number),
                 _ => None,
             }
         };
-        let mut items: Vec<Vec<String>> = Vec::new();
+        let mut items: Vec<Vec<&str>> = Vec::new();
         let mut first_number = None;
         let mut i = start;
-        while let Some((number, content)) = lines.get(i).and_then(|l| item_at(l)) {
+        while let Some(line) = lines.get(i).copied() {
+            let Some(Opener::Item { number, content }) =
+                item_at(line).and_then(|_| opener(profile, line.trim_start_matches(SP), false))
+            else {
+                break;
+            };
             if first_number.is_none() {
                 first_number = number;
             }
@@ -1025,7 +1148,7 @@ impl<'p> Reader<'p> {
             });
         }
         // Blank lines after the last item belong to the context.
-        while i > start && is_blank(&lines[i - 1]) {
+        while i > start && is_blank(lines[i - 1]) {
             i -= 1;
         }
         (
@@ -1035,8 +1158,14 @@ impl<'p> Reader<'p> {
     }
 }
 
+/// The characters `a..b` of `s`, by char index.
+fn char_slice(s: &str, a: usize, b: usize) -> &str {
+    let byte = |k: usize| s.char_indices().nth(k).map_or(s.len(), |(i, _)| i);
+    &s[byte(a)..byte(b)]
+}
+
 /// `[!type]`, `[!type]-`, `[!type]+`, then optionally a space and the title.
-pub(crate) fn callout_line(line: &str) -> Option<(String, Option<char>, Option<String>)> {
+pub(crate) fn callout_line(line: &str) -> Option<(String, Option<char>, Option<&str>)> {
     let rest = line.strip_prefix("[!")?;
     let close = rest.find(']')?;
     let t = &rest[..close];
@@ -1056,14 +1185,14 @@ pub(crate) fn callout_line(line: &str) -> Option<(String, Option<char>, Option<S
     };
     let title = match after {
         "" => None,
-        s if s.starts_with(' ') => Some(s[1..].to_string()),
+        s if s.starts_with(' ') => Some(&s[1..]),
         _ => return None,
     };
     Some((t.to_ascii_lowercase(), fold, title))
 }
 
 /// `Titel {#anker .klasse}` at the end of a heading (§6).
-fn heading_braces(t: &str) -> (String, Vec<Attr>) {
+fn heading_braces(t: &str) -> (&str, Vec<Attr>) {
     if t.ends_with('}')
         && let Some(open) = t.rfind(" {")
         && let Some(attrs) = syntax::brace_attributes(&t[open + 1..])
@@ -1072,39 +1201,40 @@ fn heading_braces(t: &str) -> (String, Vec<Attr>) {
             .into_iter()
             .map(|(name, value)| Attr { name, value })
             .collect();
-        return (t[..open].trim_end_matches(SP).to_string(), attrs);
+        return (t[..open].trim_end_matches(SP), attrs);
     }
-    (t.to_string(), Vec::new())
+    (t, Vec::new())
 }
 
 /// The lines of an item whose first line, at `lines[i]`, holds `content`:
 /// lines indented below the item's level, and blank lines followed by such
 /// lines; blank lines followed by the next item (`next`) end it. Returns the
 /// body and the index after it.
-fn item_body(
-    lines: &[String],
+fn item_body<'a>(
+    lines: &[&'a str],
     mut i: usize,
     base: usize,
-    content: String,
+    content: &'a str,
     next: impl Fn(&str) -> bool,
-) -> (Vec<String>, usize) {
+) -> (Vec<&'a str>, usize) {
     let mut body = vec![content];
     i += 1;
     while i < lines.len() {
-        if is_blank(&lines[i]) {
-            match (i..lines.len()).find(|&k| !is_blank(&lines[k])) {
-                Some(k) if indent_width(&lines[k]) >= base + 2 => {
-                    body.extend(std::iter::repeat_n(String::new(), k - i));
+        if is_blank(lines[i]) {
+            match (i..lines.len()).find(|&k| !is_blank(lines[k])) {
+                Some(k) if indent_width(lines[k]) >= base + 2 => {
+                    // Blank lines inside an item are empty.
+                    body.extend(lines[i..k].iter().map(|l| &l[l.len()..]));
                     i = k;
                 }
-                Some(k) if next(&lines[k]) => {
+                Some(k) if next(lines[k]) => {
                     i = k;
                     break;
                 }
                 _ => break,
             }
-        } else if indent_width(&lines[i]) >= base + 2 {
-            body.push(dedent(&lines[i], base + 2));
+        } else if indent_width(lines[i]) >= base + 2 {
+            body.push(dedent(lines[i], base + 2));
             i += 1;
         } else {
             break;

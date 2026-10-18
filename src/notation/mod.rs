@@ -6,6 +6,7 @@ mod inline;
 mod scan;
 mod syntax;
 mod table;
+mod track;
 mod write;
 
 use crate::profile::Profile;
@@ -15,7 +16,7 @@ use crate::{Output, canon};
 /// specification), with what was reported on the way.
 pub fn html(notation: &str, profile: &Profile) -> Output {
     let text = crate::html::lf(notation.strip_prefix('\u{feff}').unwrap_or(notation));
-    let lines: Vec<String> = text.split('\n').map(str::to_string).collect();
+    let lines: Vec<&str> = text.split('\n').collect();
     let mut reader = block::Reader::new(profile);
     let nodes = reader.blocks(&lines, false);
     let mut out = canon::store(nodes, profile);
@@ -27,6 +28,109 @@ pub fn html(notation: &str, profile: &Profile) -> Output {
     diagnostics.append(&mut out.diagnostics);
     out.diagnostics = diagnostics;
     out
+}
+
+/// What a span of notation is for an editor (SPEC §5.14).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpanKind {
+    /// Characters that carry structure: `**`, `## `, indentation, an
+    /// element line except its content, a link's path.
+    Markup,
+    /// Characters that become text of the document.
+    Content,
+    /// A line feed that is a `<br>`.
+    Break,
+    /// A line feed that ends a block, or a blank line.
+    Separator,
+    /// A non-breaking space, soft hyphen, zero-width or private-use
+    /// character.
+    Invisible,
+}
+
+/// A span of notation: its kind and its byte range in the notation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Span {
+    pub kind: SpanKind,
+    pub range: std::ops::Range<usize>,
+}
+
+/// The spans of notation as the reader sees it, for an editor to paint
+/// every character once (SPEC §5.14): in order, without gaps or overlaps.
+/// Runs of one kind are one span, except that every line feed is a span of
+/// its own. A carriage return belongs to the line feed it stands before, a
+/// byte order mark is invisible.
+pub fn spans(notation: &str, profile: &Profile) -> Vec<Span> {
+    let bom = if notation.starts_with('\u{feff}') {
+        3
+    } else {
+        0
+    };
+    let body = &notation[bom..];
+    // The text the reader reads (§5.2), and where each of its bytes was.
+    let mut text = String::with_capacity(body.len());
+    let mut origin = Vec::with_capacity(body.len() + 1);
+    let mut chars = body.char_indices().peekable();
+    while let Some((k, ch)) = chars.next() {
+        if ch == '\r' {
+            chars.next_if(|&(_, c)| c == '\n');
+            text.push('\n');
+            origin.push(bom + k);
+            continue;
+        }
+        text.push(ch);
+        origin.extend((0..ch.len_utf8()).map(|j| bom + k + j));
+    }
+    origin.push(notation.len());
+    let lines: Vec<&str> = text.split('\n').collect();
+    let mut reader = block::Reader::new(profile);
+    reader.track = Some(track::Track::new(&text));
+    reader.blocks(&lines, false);
+    let mut marks: Vec<Option<track::Mark>> = vec![None; text.len()];
+    for (from, to, mark) in reader.track.map(|t| t.marks).unwrap_or_default() {
+        for m in marks.iter_mut().take(to).skip(from) {
+            *m = Some(mark);
+        }
+    }
+    let mut out: Vec<Span> = Vec::new();
+    let mut push = |kind: SpanKind, range: std::ops::Range<usize>| {
+        let single = matches!(kind, SpanKind::Break | SpanKind::Separator);
+        match out.last_mut() {
+            Some(last) if last.kind == kind && !single && last.range.end == range.start => {
+                last.range.end = range.end;
+            }
+            _ => out.push(Span { kind, range }),
+        }
+    };
+    if bom > 0 {
+        push(SpanKind::Invisible, 0..bom);
+    }
+    for (b, ch) in text.char_indices() {
+        let kind = match (ch, marks[b]) {
+            _ if is_invisible(ch) => SpanKind::Invisible,
+            ('\n', Some(track::Mark::Break)) => SpanKind::Break,
+            ('\n', Some(track::Mark::Content)) => SpanKind::Content,
+            ('\n', _) => SpanKind::Separator,
+            (_, Some(track::Mark::Content)) => SpanKind::Content,
+            _ => SpanKind::Markup,
+        };
+        push(kind, origin[b]..origin[b + ch.len_utf8()]);
+    }
+    out
+}
+
+fn is_invisible(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{a0}'
+            | '\u{202f}'
+            | '\u{ad}'
+            | '\u{200b}'..='\u{200d}'
+            | '\u{2060}'
+            | '\u{feff}'
+            | '\u{e000}'..='\u{f8ff}'
+            | '\u{f0000}'..='\u{ffffd}'
+            | '\u{100000}'..='\u{10fffd}'
+    )
 }
 
 /// Reads HTML and writes its display, the one canonical notation
@@ -353,6 +457,7 @@ mod tests {
             assert!(h.text.contains("Eisen"), "{head:?}");
             let d = display(&h.text, &profile).text;
             assert_eq!(super::html(&d, &profile).text, h.text, "{head:?}");
+            assert_eq!(check_spans(&input, &profile), None, "{head:?}");
         }
     }
 
@@ -387,7 +492,95 @@ mod tests {
             let h = super::html(&input, &profile).text;
             let d = display(&h, &profile).text;
             assert_eq!(super::html(&d, &profile).text, h, "{head:?}");
+            assert_eq!(check_spans(&input, &profile), None, "{head:?}");
         }
+    }
+
+    /// The text of a tree as the reader built it: its text nodes in order,
+    /// a `br` as a line feed.
+    fn tree_text(nodes: &[crate::dom::Node], out: &mut String) {
+        for node in nodes {
+            match node {
+                crate::dom::Node::Text(t) => out.push_str(&t.text),
+                crate::dom::Node::Element(e) if e.name == "br" => out.push('\n'),
+                crate::dom::Node::Element(e) => tree_text(&e.children, out),
+                _ => {}
+            }
+        }
+    }
+
+    /// Checks the spans of `input`: they tile it, and their content and
+    /// breaks are the text of what the reader reads (`None`), or why not.
+    fn check_spans(input: &str, profile: &Profile) -> Option<String> {
+        let spans = super::spans(input, profile);
+        let mut at = 0;
+        for s in &spans {
+            if s.range.start != at || s.range.end <= s.range.start {
+                return Some(format!("gap or overlap at {at}: {s:?}"));
+            }
+            at = s.range.end;
+        }
+        if at != input.len() {
+            return Some(format!("spans end at {at} of {}", input.len()));
+        }
+        // Text that is not in the notation as it stands: a character
+        // reference in typed HTML, the default title of a callout.
+        if input.contains('&') || input.contains("[!") {
+            return None;
+        }
+        let text = crate::html::lf(input.strip_prefix('\u{feff}').unwrap_or(input));
+        let lines: Vec<&str> = text.split('\n').collect();
+        let mut tree = String::new();
+        tree_text(
+            &block::Reader::new(profile).blocks(&lines, false),
+            &mut tree,
+        );
+        let content: String = spans
+            .iter()
+            .filter(|s| s.kind == SpanKind::Content)
+            .map(|s| &input[s.range.clone()])
+            .collect();
+        // Line feeds and invisible characters aside: a `br` may be written
+        // `.br()`, and an invisible character may stand in markup.
+        let plain = |s: &str| -> String {
+            s.chars()
+                .filter(|&c| !matches!(c, '\n' | '\r') && !is_invisible(c))
+                .collect()
+        };
+        (plain(&content) != plain(&tree))
+            .then(|| format!("content {content:?}\n  tree    {tree:?}"))
+    }
+
+    /// The spans of generated notation tile it and hold its text.
+    #[test]
+    fn spans_tile_and_hold_the_text() {
+        let profile = Profile::reference("test");
+        let n: usize = option_env!("LIPUPONA_L2_CASES")
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(3_000);
+        let mut failures = Vec::new();
+        for input in notation(n, 0x5eed_0f5a_a175_0001) {
+            for input in [
+                input.clone(),
+                input.replace('\n', "\r\n"),
+                format!("\u{feff}{input}"),
+            ] {
+                if let Some(why) = check_spans(&input, &profile) {
+                    failures.push(format!("input {input:?}\n  {why}"));
+                }
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "{} of {n} fail; first ones:\n{}",
+            failures.len(),
+            failures
+                .iter()
+                .take(12)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
     }
 
     /// L2/L3 for generated notation, valid or not: what it reads as is

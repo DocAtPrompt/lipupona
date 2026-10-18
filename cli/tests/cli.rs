@@ -53,6 +53,23 @@ fn notation_and_html_read_each_other() {
 }
 
 #[test]
+fn spans_tile_the_notation() {
+    let out = run(&["spans"], "## Befund\nFerritin **tief**\n");
+    assert_eq!(out.code, 0);
+    assert_eq!(
+        out.stdout,
+        "markup        0..3     \"## \"\n\
+         content       3..9     \"Befund\"\n\
+         separator     9..10    \"\\n\"\n\
+         content      10..19    \"Ferritin \"\n\
+         markup       19..21    \"**\"\n\
+         content      21..25    \"tief\"\n\
+         markup       25..27    \"**\"\n\
+         separator    27..28    \"\\n\"\n"
+    );
+}
+
+#[test]
 fn canon_reports_diagnostics_on_stderr() {
     let out = run(&["canon"], "<P>Eisen <!--x-->und Folsäure</P>");
     assert_eq!(out.code, 0);

@@ -3,6 +3,7 @@
 use super::block::{Reader, SP, dedent, indent_width, is_blank};
 use super::inline::element;
 use super::syntax;
+use super::track::Src;
 use crate::diag::{Code, Diagnostic};
 use crate::dom::{Attr, Node};
 
@@ -18,35 +19,32 @@ struct Cell {
 
 /// Splits a grid row at the `|` that are not escaped; the cells keep their
 /// escapes for the inline reader.
-fn split_row(line: &str) -> Vec<String> {
+fn split_row(line: &str) -> Vec<&str> {
     let s = line.trim_matches(SP);
     let s = s.strip_prefix('|').unwrap_or(s);
     let mut cells = Vec::new();
-    let mut cur = String::new();
-    let mut chars = s.chars().peekable();
-    while let Some(c) = chars.next() {
+    let mut start = 0;
+    let mut chars = s.char_indices().peekable();
+    while let Some((b, c)) = chars.next() {
         match c {
             '\\' => {
-                cur.push(c);
-                if let Some(&n) = chars.peek() {
-                    cur.push(n);
-                    chars.next();
-                }
+                chars.next();
             }
-            '|' => cells.push(std::mem::take(&mut cur)),
-            _ => cur.push(c),
+            '|' => {
+                cells.push(&s[start..b]);
+                start = b + 1;
+            }
+            _ => {}
         }
     }
+    let cur = &s[start..];
     if !cur.trim_matches(SP).is_empty() {
         cells.push(cur);
     }
-    cells
-        .into_iter()
-        .map(|c| c.trim_matches(SP).to_string())
-        .collect()
+    cells.into_iter().map(|c| c.trim_matches(SP)).collect()
 }
 
-fn is_separator(cells: &[String]) -> bool {
+fn is_separator(cells: &[&str]) -> bool {
     !cells.is_empty()
         && cells.iter().all(|c| {
             let inner = c.trim_start_matches(':').trim_end_matches(':');
@@ -57,18 +55,18 @@ fn is_separator(cells: &[String]) -> bool {
 /// The pipe grid at `lines[i]`, with the caption line above it if any.
 pub(crate) fn grid(
     r: &mut Reader,
-    lines: &[String],
+    lines: &[&str],
     i: usize,
-    caption: Option<String>,
+    caption: Option<Src>,
 ) -> (Node, usize) {
     let mut j = i;
-    let mut rows: Vec<Vec<String>> = Vec::new();
+    let mut rows: Vec<Vec<&str>> = Vec::new();
     let mut header_rows = None;
     while j < lines.len()
         && lines[j].trim_start_matches(SP).starts_with('|')
         && !lines[j].trim_start_matches(SP).starts_with("|===")
     {
-        let cells = split_row(&lines[j]);
+        let cells = split_row(lines[j]);
         if header_rows.is_none() && is_separator(&cells) {
             if cells.iter().any(|c| c.contains(':')) {
                 r.diags.push(Diagnostic::new(
@@ -87,7 +85,7 @@ pub(crate) fn grid(
     let mut owner: Vec<Vec<Option<usize>>> = Vec::new();
     for (row, raw) in rows.iter().enumerate() {
         let mut here: Vec<Option<usize>> = Vec::new();
-        for (col, text) in raw.iter().enumerate() {
+        for (col, &text) in raw.iter().enumerate() {
             let up = (text == "^")
                 .then(|| {
                     owner
@@ -117,9 +115,10 @@ pub(crate) fn grid(
                 let (header, content) = match text.strip_prefix("= ") {
                     Some(rest) => (true, rest),
                     None if text == "=" => (true, ""),
-                    None => (row < header_rows, text.as_str()),
+                    None => (row < header_rows, text),
                 };
-                let children = r.phrasing(content);
+                let content = r.src(content);
+                let children = r.phrasing(&content);
                 cells.push(Cell {
                     row,
                     col,
@@ -140,9 +139,9 @@ pub(crate) fn grid(
 /// The cell-per-line form at `lines[i]` (`|=== n` … `|===`).
 pub(crate) fn cells(
     r: &mut Reader,
-    lines: &[String],
+    lines: &[&str],
     i: usize,
-    caption: Option<String>,
+    caption: Option<Src>,
 ) -> (Node, usize) {
     let n: usize = lines[i].trim_matches(SP)[4..]
         .trim_matches(SP)
@@ -200,17 +199,17 @@ pub(crate) fn cells(
         }
         let (header, children) = if blocks {
             let mut k = j;
-            while k < lines.len() && (is_blank(&lines[k]) || indent_width(&lines[k]) >= 2) {
+            while k < lines.len() && (is_blank(lines[k]) || indent_width(lines[k]) >= 2) {
                 k += 1;
             }
-            let body: Vec<String> = lines[j..k].iter().map(|l| dedent(l, 2)).collect();
+            let body: Vec<&str> = lines[j..k].iter().map(|l| dedent(l, 2)).collect();
             j = k;
             (false, r.blocks(&body, false))
         } else {
             match content.strip_prefix("= ") {
-                Some(rest) => (true, r.phrasing(rest)),
+                Some(rest) => (true, r.phrasing(&r.src(rest))),
                 None if content == "=" => (true, Vec::new()),
-                None => (false, r.phrasing(&content)),
+                None => (false, r.phrasing(&r.src(content))),
             }
         };
         cells.push(Cell {
@@ -237,10 +236,10 @@ pub(crate) fn cells(
 }
 
 /// A cell line: `2+`, `.3+`, `2.3+`, `[attrs]`, `a`, then `|` and content.
-fn cell_line(line: &str) -> Option<(usize, usize, Vec<Attr>, bool, String)> {
+fn cell_line(line: &str) -> Option<(usize, usize, Vec<Attr>, bool, &str)> {
     let bar = line.find('|')?;
     let (prefix, rest) = (&line[..bar], &line[bar + 1..]);
-    let content = rest.strip_prefix(' ').unwrap_or(rest).to_string();
+    let content = rest.strip_prefix(' ').unwrap_or(rest);
     let mut p = prefix;
     let (mut colspan, mut rowspan) = (1, 1);
     if let Some(plus) = p.find('+') {
@@ -278,7 +277,7 @@ fn assemble(
     cells: Vec<Cell>,
     rows: usize,
     header_rows: usize,
-    caption: Option<String>,
+    caption: Option<Src>,
 ) -> Node {
     let mut by_row: Vec<Vec<Node>> = (0..rows).map(|_| Vec::new()).collect();
     for c in cells {
@@ -305,11 +304,7 @@ fn assemble(
     }
     let mut parts = Vec::new();
     if let Some(caption) = caption {
-        parts.push(element(
-            "caption",
-            Vec::new(),
-            r.phrasing(caption.trim_matches(SP)),
-        ));
+        parts.push(element("caption", Vec::new(), r.phrasing(&caption.trim())));
     }
     let rows: Vec<Node> = by_row
         .into_iter()

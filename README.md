@@ -96,12 +96,13 @@ Version 0.2.0, a draft for review.
 - [`docs/ports.md`](docs/ports.md) — plan for bindings and ports, and the
   constraints on the core that keep them possible
 - `src/` — the reference implementation in Rust: `canon`, `html` (reading
-  notation) and `display` (writing it). It passes the whole suite; property
-  tests check L1, L2 and L4 on generated documents. `cargo test` runs
-  everything.
+  notation), `display` (writing it) and, for editors, `spans` (markup,
+  content, breaks, separators and invisible characters of any notation,
+  §5.14). It passes the whole suite; property tests check L1, L2 and L4 on
+  generated documents. `cargo test` runs everything.
 - [`cli/`](cli/) — the `lipupona` command over the library and the
-  converters: `canon`, `display`, `html`, `from-md`, `from-html` and
-  `check` (for stored files), on files or whole folders — an Obsidian
+  converters: `canon`, `display`, `html`, `spans`, `from-md`, `from-html`
+  and `check` (for stored files), on files or whole folders — an Obsidian
   vault with its wikilinks. `cargo install --path cli` installs it;
   `lipupona display page.html` shows a page's notation, `lipupona --help`
   the rest.

@@ -7,6 +7,7 @@
 
 use super::scan::Scan;
 use super::syntax::{self, Selector, Shape};
+use super::track::Mark;
 use crate::diag::{Code, Diagnostic};
 use crate::dom::{Attr, Comment, Element, Node, Text};
 use crate::profile::{Kind, Profile};
@@ -31,6 +32,10 @@ pub(crate) struct Inline<'p> {
     depth: usize,
     /// Whether a construct would have opened beyond the cap (SPEC §3.4).
     pub too_deep: bool,
+    /// For an editor's spans: the offset in the notation of each char of
+    /// the text (empty when nothing is recorded), and what was recorded.
+    pub at: Vec<Option<usize>>,
+    pub marks: Vec<(usize, usize, Mark)>,
 }
 
 pub(crate) fn element(name: &str, attrs: Vec<Attr>, children: Vec<Node>) -> Node {
@@ -130,7 +135,32 @@ impl<'p> Inline<'p> {
             fragments: std::collections::HashMap::new(),
             depth,
             too_deep,
+            at: Vec::new(),
+            marks: Vec::new(),
         }
+    }
+
+    /// Records the chars `from..to` of the text.
+    fn mark(&mut self, c: &[char], from: usize, to: usize, mark: Mark) {
+        if self.at.is_empty() {
+            return;
+        }
+        let to = to.min(c.len());
+        for (k, ch) in c.get(from..to).unwrap_or(&[]).iter().enumerate() {
+            let Some(&Some(o)) = self.at.get(from + k) else {
+                continue;
+            };
+            let end = o + ch.len_utf8();
+            match self.marks.last_mut() {
+                Some((_, e, m)) if *e == o && *m == mark => *e = end,
+                _ => self.marks.push((o, end, mark)),
+            }
+        }
+    }
+
+    /// The char index of byte `b` of the text.
+    fn char_at(&self, b: usize) -> usize {
+        self.bytes.partition_point(|&x| x < b)
     }
 
     /// Reads the content of an element that opens inside the current one.
@@ -181,12 +211,14 @@ impl<'p> Inline<'p> {
             let ch = c[i];
             if ch == '\\' && i + 1 < end && c[i + 1].is_ascii_punctuation() {
                 buf.push(c[i + 1]);
+                self.mark(c, i + 1, i + 2, Mark::Content);
                 i += 2;
                 continue;
             }
             if ch == '\n' {
                 flush(&mut buf, &mut out);
                 out.push(element("br", Vec::new(), Vec::new()));
+                self.mark(c, i, i + 1, Mark::Break);
                 i += 1;
                 continue;
             }
@@ -196,6 +228,7 @@ impl<'p> Inline<'p> {
                     self.too_deep = true;
                 }
                 buf.push(ch);
+                self.mark(c, i, i + 1, Mark::Content);
                 i += 1;
                 continue;
             }
@@ -211,11 +244,13 @@ impl<'p> Inline<'p> {
                 // A run without a partner is literal, all of it.
                 while i < end && c[i] == '`' {
                     buf.push('`');
+                    self.mark(c, i, i + 1, Mark::Content);
                     i += 1;
                 }
                 continue;
             }
             buf.push(ch);
+            self.mark(c, i, i + 1, Mark::Content);
             i += 1;
         }
         flush(&mut buf, &mut out);
@@ -228,6 +263,11 @@ impl<'p> Inline<'p> {
         match c[i] {
             '`' => {
                 let (content, next) = self.scan.code_span(c, i, end)?;
+                let n = c[i..next].iter().take_while(|&&x| x == '`').count();
+                let len = content.chars().count();
+                // One space on each side may have been stripped.
+                let from = i + n + ((next - n) - (i + n) - len) / 2;
+                self.mark(c, from, from + len, Mark::Content);
                 Some((Some(element("code", Vec::new(), vec![text(content)])), next))
             }
             '[' => self.link(c, i, end).map(|(n, next)| (Some(n), next)),
@@ -300,6 +340,7 @@ impl<'p> Inline<'p> {
                     self.diags
                         .push(Diagnostic::new(Code::UnclosedComment, "<!-- without -->"));
                     // The rest stays text.
+                    self.mark(c, i, end, Mark::Content);
                     Some((Some(text(rest)), end))
                 }
             };
@@ -338,6 +379,7 @@ impl<'p> Inline<'p> {
                     }) =>
             {
                 // Taken as a whole: no notation inside.
+                self.mark_html(c, &nodes, a);
                 Some((
                     Some(match nodes.len() {
                         1 => nodes.into_iter().next().unwrap_or_else(|| text("")),
@@ -354,6 +396,14 @@ impl<'p> Inline<'p> {
                 let literal: String = c[i..i + len].iter().collect();
                 self.diags
                     .push(Diagnostic::new(Code::HtmlNotTaken, literal.clone()));
+                for k in i..i + len {
+                    let mark = if c[k] == '\n' {
+                        Mark::Break
+                    } else {
+                        Mark::Content
+                    };
+                    self.mark(c, k, k + 1, mark);
+                }
                 // Literal text, whose line ends are line breaks (§5.2).
                 let mut nodes = Vec::new();
                 for (k, line) in literal.split('\n').enumerate() {
@@ -369,6 +419,25 @@ impl<'p> Inline<'p> {
                     _ => element("#fragment", Vec::new(), nodes),
                 };
                 Some((Some(node), i + len))
+            }
+        }
+    }
+}
+
+impl Inline<'_> {
+    /// Records the text of typed HTML parsed from the bytes from `a` on.
+    fn mark_html(&mut self, c: &[char], nodes: &[Node], a: usize) {
+        if self.at.is_empty() {
+            return;
+        }
+        for node in nodes {
+            match node {
+                Node::Text(t) => {
+                    let (from, to) = (self.char_at(a + t.span.start), self.char_at(a + t.span.end));
+                    self.mark(c, from, to, Mark::Content);
+                }
+                Node::Element(e) => self.mark_html(c, &e.children, a),
+                _ => {}
             }
         }
     }
