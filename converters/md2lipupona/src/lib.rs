@@ -711,29 +711,31 @@ impl<'a> Builder<'a> {
     /// An HTML block: taken if it is a fragment of profile elements, else
     /// literal text whose line ends are line breaks.
     fn html_block(&mut self, raw: &str) {
-        let nodes: Vec<Node> = lipupona::html::parse(raw)
-            .into_iter()
-            .filter(|n| !n.is_blank_text())
-            .collect();
-        if self.fits(&nodes) && !nodes.iter().any(|n| matches!(n, Node::Text(_))) {
+        // A comment alone is the author's note, and stays one.
+        let nodes = lipupona::html::parse(raw);
+        let solid: Vec<&Node> = nodes.iter().filter(|n| !n.is_blank_text()).collect();
+        if !solid.is_empty() && solid.iter().all(|n| matches!(n, Node::Comment(_))) {
             for node in nodes {
+                if let Node::Comment(_) = node {
+                    self.push(node);
+                }
+            }
+            return;
+        }
+        // A fragment of the profile is what the author typed: taken as it
+        // is, as typed HTML is (SPEC §6).
+        let solid: Vec<Node> = nodes.into_iter().filter(|n| !n.is_blank_text()).collect();
+        if self.fits(&solid) && !solid.iter().any(|n| matches!(n, Node::Text(_))) {
+            for node in solid {
                 self.push(node);
             }
             return;
         }
-        self.report(
-            "html-not-taken",
-            raw.lines().next().unwrap_or("").to_string(),
-        );
-        for part in raw.split("\n\n").filter(|p| !p.trim().is_empty()) {
-            let mut p = element("p", Vec::new());
-            for (k, line) in part.split('\n').enumerate() {
-                if k > 0 {
-                    p.children.push(Node::Element(element("br", Vec::new())));
-                }
-                p.children.push(text(line));
-            }
-            self.push(Node::Element(p));
+        // Anything else goes through html2lipupona, mode export.
+        let (blocks, report) = html2lipupona::blocks(raw);
+        self.entries.extend(report);
+        for node in blocks {
+            self.push(node);
         }
     }
 

@@ -64,34 +64,14 @@ const EMBEDS: &[&str] = &["iframe", "video", "audio", "embed", "object"];
 pub fn convert(html: &str, mode: Mode) -> Conversion {
     let Mode::Export = mode;
     let profile = Profile::reference(lipupona::IMPLEMENTATION);
-    let nodes = lipupona::html::parse(html);
-    let mut targets = Vec::new();
-    link_targets(&nodes, &mut targets);
-    let mut c = Converter {
-        profile: &profile,
-        targets,
-        entries: Vec::new(),
-        summary: Vec::new(),
-        in_link: 0,
-    };
-    let flow = c.flow(nodes);
-    let mut blocks = c.blocks_of(flow);
+    let (mut blocks, mut report) = blocks(html);
     for _ in 0..flatten_lists(&mut blocks, profile.list_depth()) {
-        c.entries.push(Entry::new(
+        report.push(Entry::new(
             "list-depth-reduced",
             format!("items below level {} moved up", profile.list_depth()),
         ));
     }
     let stored = lipupona::store(blocks);
-    let mut report: Vec<Entry> = c
-        .summary
-        .into_iter()
-        .map(|(code, name, n)| match n {
-            1 => Entry::new(code, name),
-            n => Entry::new(code, format!("{name} ({n})")),
-        })
-        .collect();
-    report.extend(c.entries);
     for d in stored.diagnostics {
         if d.code != Code::Comment {
             report.push(Entry::new(d.code.as_str(), d.message));
@@ -104,6 +84,37 @@ pub fn convert(html: &str, mode: Mode) -> Conversion {
     }
 }
 
+/// Converts foreign HTML, in mode *export*, into blocks of the profile for a
+/// caller that builds a tree of its own (md2lipupona's HTML blocks), with
+/// the report. Lists are not flattened yet and nothing is stored: the
+/// caller does both for its whole tree.
+pub fn blocks(html: &str) -> (Vec<Node>, Vec<Entry>) {
+    let profile = Profile::reference(lipupona::IMPLEMENTATION);
+    let nodes = lipupona::html::parse(html);
+    let mut targets = Vec::new();
+    link_targets(&nodes, &mut targets);
+    let mut c = Converter {
+        profile: &profile,
+        targets,
+        entries: Vec::new(),
+        summary: Vec::new(),
+        in_link: 0,
+        open: Vec::new(),
+    };
+    let flow = c.flow(nodes);
+    let blocks = c.blocks_of(flow);
+    let mut report: Vec<Entry> = c
+        .summary
+        .into_iter()
+        .map(|(code, name, n)| match n {
+            1 => Entry::new(code, name),
+            n => Entry::new(code, format!("{name} ({n})")),
+        })
+        .collect();
+    report.extend(c.entries);
+    (blocks, report)
+}
+
 struct Converter<'p> {
     profile: &'p Profile,
     /// Fragments that links of the document point to (`#…`).
@@ -113,6 +124,8 @@ struct Converter<'p> {
     summary: Vec<(&'static str, String, usize)>,
     /// Links open around what is being converted.
     in_link: usize,
+    /// Kept elements open around what is being converted.
+    open: Vec<String>,
 }
 
 impl Converter<'_> {
@@ -185,6 +198,24 @@ impl Converter<'_> {
         if WRAPPERS.contains(&name) {
             return self.flow(el.children);
         }
+        // Parts of a structure outside it (a `tr` without its table, as
+        // CommonMark cuts HTML blocks at blank lines) are unwrapped.
+        let parents: &[&str] = match name {
+            "tr" | "td" | "th" | "thead" | "tfoot" | "caption" => &["table"],
+            "li" => &["ul", "ol"],
+            "dt" | "dd" => &["dl"],
+            "summary" => &["details"],
+            "figcaption" => &["figure"],
+            _ => &[],
+        };
+        let inside = self
+            .open
+            .last()
+            .is_some_and(|p| parents.contains(&p.as_str()));
+        if !parents.is_empty() && !inside {
+            self.summarise("dropped-element", &format!("{name} outside its parent"));
+            return self.flow(el.children);
+        }
         if EMBEDS.contains(&name) {
             return self.embed(el);
         }
@@ -208,7 +239,9 @@ impl Converter<'_> {
             }
         };
         let attrs = self.attributes(&el, name);
+        self.open.push(name.to_string());
         let children = self.flow(el.children);
+        self.open.pop();
         if inline {
             if children.iter().any(|n| !is_phrasing(self.profile, n)) {
                 // An inline element cannot hold blocks.
@@ -552,6 +585,7 @@ impl Converter<'_> {
             .flat_map(|tr| tr.children.iter().filter_map(Node::element))
             .filter(|c| matches!(c.name.as_str(), "td" | "th"))
             .collect();
+        let no_cells = cells.is_empty();
         let has_th = cells.iter().any(|c| c.name == "th");
         let with_blocks = cells
             .iter()
@@ -590,7 +624,12 @@ impl Converter<'_> {
         }
         self.drop_style(&el);
         let attrs = self.attributes(&el, "table");
+        if no_cells && caption.is_none() {
+            // Nothing in it.
+            return Vec::new();
+        }
         let mut table = element("table", attrs);
+        self.open.push("table".to_string());
         if let Some(c) = caption {
             table.children.extend(self.kept(c, "caption"));
         }
@@ -604,6 +643,7 @@ impl Converter<'_> {
             }
             table.children.push(Node::Element(section));
         }
+        self.open.pop();
         vec![Node::Element(table)]
     }
 
@@ -611,6 +651,7 @@ impl Converter<'_> {
         self.drop_style(&tr);
         let attrs = self.attributes(&tr, "tr");
         let mut row = element("tr", attrs);
+        self.open.push("tr".to_string());
         for node in tr.children {
             if let Node::Element(cell) = node
                 && matches!(cell.name.as_str(), "td" | "th")
@@ -619,6 +660,7 @@ impl Converter<'_> {
                 row.children.extend(self.kept(cell, &name));
             }
         }
+        self.open.pop();
         vec![Node::Element(row)]
     }
 }

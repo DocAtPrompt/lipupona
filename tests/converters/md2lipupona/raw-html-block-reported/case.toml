@@ -1,0 +1,3 @@
+kind = "conversion"
+section = "2"
+note = "What html2lipupona drops from an HTML block goes into the report."

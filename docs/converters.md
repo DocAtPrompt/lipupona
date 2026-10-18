@@ -98,12 +98,16 @@ above leaves a choice:
 - **Lists deeper than the profile.** Items below the profile's list depth
   move up into its deepest level, in document order, after the item they
   stood in: `list-depth-reduced`, once per top-level list.
-- **Raw HTML**, until html2lipupona exists, follows the rule for typed HTML
-  (SPEC §6): an inline start tag of a profile element with profile
-  attributes opens that element, its end tag closes it, and Markdown between
-  them is read; an HTML block is taken if it is a fragment of profile
-  elements. Anything else stays literal text: `html-not-taken`. Comments
-  are kept as comments.
+- **Raw HTML.** An HTML block that is a fragment of profile elements and
+  attributes is taken as it is — the rule for typed HTML (SPEC §6) — so what
+  the author typed stays, classes included. Any other HTML block goes
+  through html2lipupona, mode *export*, with its report (since 2026-10-18;
+  before, it stayed literal text). A block of comments alone stays
+  comments. Inline HTML, which CommonMark hands over one tag at a time,
+  follows the typed-HTML rule: an inline start tag of a profile element
+  with profile attributes opens that element, its end tag closes it, and
+  Markdown between them is read; anything else stays literal text:
+  `html-not-taken`.
 - **Footnotes** are numbered in the order of their first reference;
   definitions without a reference follow, numbered on. There are no back
   links.
@@ -234,6 +238,12 @@ here for review:
   blocks.
 - **Anything else** outside the profile is unwrapped, its text kept:
   `dropped-element`.
+- **Parts without their structure** — `tr`, `td`, `th`, `thead`, `tfoot`,
+  `caption` without a table, `li` without a list, `dt`/`dd` without `dl`,
+  `summary` without `details`, `figcaption` without `figure` — are
+  unwrapped: `dropped-element`. CommonMark cuts an HTML block at a blank
+  line, so a table typed in Markdown with blank lines arrives in pieces. A
+  table without any cell is dropped.
 - **Never content** (`script`, `style`, `meta`, `link`, `noscript`,
   `template`, comments, the head) is removed without a report.
 - **The head**: `title` and the `lang` of `html` are returned as values.

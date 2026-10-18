@@ -1,0 +1,3 @@
+kind = "conversion"
+section = "2"
+note = "An HTML block outside the profile goes through html2lipupona."

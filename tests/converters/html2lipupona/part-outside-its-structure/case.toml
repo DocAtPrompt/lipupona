@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "3"
+note = "A part of a structure without the structure around it is unwrapped and reported."
+mode = "export"

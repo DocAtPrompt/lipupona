@@ -35,6 +35,7 @@ dependencies = [
 name = "md2lipupona"
 version = "0.1.0"
 dependencies = [
+ "html2lipupona",
  "lipupona",
  "lipupona-convert",
  "pulldown-cmark",
