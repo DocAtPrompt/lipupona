@@ -203,8 +203,7 @@ Meaning that lives only in colour or position — a warning set in red — is
 **not guessed**. It is reported (`dropped-style`), and the author decides.
 
 **Decisions for *export* mode** (2026-10-18), where the table leaves a
-choice; the user decided `u`, `dl`, `aside` and ids, the rest is proposed
-here for review:
+choice:
 
 - **`u`** keeps its text, `dropped-element` (no meaning is guessed).
 - **`aside`** is never a callout, also with a class like `note`: unwrapped,
@@ -326,5 +325,5 @@ produces documents that satisfy L1–L4 of the specification.
 
 ## 6 · Open for review
 
-- (The questions on `u`, `dl` and `aside` were decided on 2026-10-18; see
-  §3.2.)
+- (The questions on `u`, `dl` and `aside` and the other rules of *export*
+  mode were decided on 2026-10-18; see §3.2.)
