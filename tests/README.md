@@ -49,7 +49,8 @@ Converter cases live in `tests/converters/<tool>/<case>/` (for example
 converter's own runner; `docs/converters.md` is their specification.
 `meta.txt` holds the values a converter returns for the head, one
 `key: value` per line in the order `title`, `lang`, `created`, `source`,
-`aliases`, `tags`, then other keys as they appear; a list is written with
+`aliases`, `tags`, then other keys and entries as they appear; a list is
+written with
 `, ` between its items, and a key without a value is left out. A case
 without `meta.txt` expects no values. `stripped.html` (html2lipupona, mode
 *article*) holds the content of the `stripped-region` entries, each as

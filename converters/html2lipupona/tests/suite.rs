@@ -138,6 +138,17 @@ fn meta_lines(meta: &Meta) -> String {
             lines.push(format!("{key}: {v}"));
         }
     }
+    let mut k = 0;
+    while k < meta.entries.len() {
+        let name = &meta.entries[k].0;
+        let run: Vec<&str> = meta.entries[k..]
+            .iter()
+            .take_while(|(n, _)| n == name)
+            .map(|(_, v)| v.as_str())
+            .collect();
+        lines.push(format!("{name}: {}", run.join(", ")));
+        k += run.len();
+    }
     lines.join("\n")
 }
 

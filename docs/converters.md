@@ -283,7 +283,15 @@ choice:
   table without any cell is dropped.
 - **Never content** (`script`, `style`, `meta`, `link`, `noscript`,
   `template`, comments, the head) is removed without a report.
-- **The head**: `title` and the `lang` of `html` are returned as values.
+- **The head**: `title`, the `lang` of `html` and the page's metadata are
+  returned as values, read as SPEC §3.7 reads a head. Of the entries
+  `<meta name content>` only metadata of the content is kept
+  (2026-10-18): `description`, `author`, `keywords` — split at commas into
+  one entry per keyword — and the names beginning with `dcterms.` or
+  `citation_`, in their order. Every other entry (`viewport`, `robots`,
+  `generator`, `theme-color`, a verification code, `twitter:card`) is
+  dropped and reported, once per name with a count: `dropped-element`,
+  `meta viewport`.
 - **Summaries.** `dropped-element`, `dropped-attribute` and `dropped-style`
   are reported once per element, attribute or style property name, with a
   count; every other code once per occurrence. Attributes and styles are

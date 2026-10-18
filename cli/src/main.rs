@@ -428,6 +428,12 @@ fn convert(
             };
             head.items
                 .extend(out.meta.title.or_else(stem).map(HeadItem::Title));
+            head.items.extend(
+                out.meta
+                    .entries
+                    .into_iter()
+                    .map(|(name, value)| HeadItem::Entry { name, value }),
+            );
             (lipupona::document(&head, &out.html).text, notes)
         }
         Command::Check => unreachable!("check has no single output"),

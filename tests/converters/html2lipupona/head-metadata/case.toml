@@ -1,0 +1,3 @@
+kind = "conversion"
+section = "3.2"
+note = "Of the entries of the head only metadata of the content is returned, keywords one by one; every other entry is reported once per name."

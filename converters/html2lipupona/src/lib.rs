@@ -14,6 +14,7 @@
 mod article;
 
 use lipupona::dom::{Attr, Element, Node};
+use lipupona::head::HeadItem;
 use lipupona::{Code, Profile};
 pub use lipupona_convert::Entry;
 use lipupona_convert::{
@@ -37,6 +38,9 @@ pub enum Mode {
 pub struct Meta {
     pub title: Option<String>,
     pub lang: Option<String>,
+    /// Entries of the head (SPEC §3.7): the page's metadata of its content,
+    /// name and value, in order (`docs/converters.md` §3.2).
+    pub entries: Vec<(String, String)>,
 }
 
 /// The result of a conversion: the body content as canonical HTML (ending
@@ -91,10 +95,11 @@ pub fn convert(html: &str, mode: Mode) -> Conversion {
         .collect();
     let (blocks, entries) = convert_nodes(&profile, nodes, &targets);
     report.extend(entries);
+    let meta = head(html, &mut report);
     Conversion {
         html: store(&profile, blocks, &mut report),
         report,
-        meta: head(html),
+        meta,
     }
 }
 
@@ -934,28 +939,45 @@ fn link_targets(nodes: &[Node], out: &mut Vec<String>) {
 }
 
 /// The title and the language of a whole document.
-fn head(html: &str) -> Meta {
-    let lower = html.to_ascii_lowercase();
-    let title = lower.find("<title").and_then(|start| {
-        let open = start + lower[start..].find('>')? + 1;
-        let close = open + lower[open..].find("</title")?;
-        let decoded = plain_text(&lipupona::html::parse(&format!(
-            "<p>{}</p>",
-            &html[open..close]
-        )));
-        let collapsed = decoded.split_whitespace().collect::<Vec<_>>().join(" ");
-        (!collapsed.is_empty()).then_some(collapsed)
-    });
-    let lang = lower.find("<html").and_then(|start| {
-        let end = start + lower[start..].find('>')?;
-        let tag = &html[start..end];
-        let k = tag.to_ascii_lowercase().find("lang=")? + 5;
-        let rest = &tag[k..];
-        let value = match rest.chars().next()? {
-            q @ ('"' | '\'') => rest[1..].split(q).next()?,
-            _ => rest.split(|c: char| c.is_whitespace()).next()?,
+/// The values for the head, read as SPEC §3.7 reads a head: title,
+/// language, and the entries that are metadata of the content; every other
+/// entry is reported once per name.
+fn head(html: &str, report: &mut Vec<Entry>) -> Meta {
+    let (head, _) = lipupona::head::Head::from_document(&lipupona::html::parse_document(html));
+    let mut meta = Meta {
+        lang: head.lang.filter(|l| !l.is_empty()),
+        ..Meta::default()
+    };
+    let mut dropped: Vec<(String, usize)> = Vec::new();
+    for item in head.items {
+        match item {
+            HeadItem::Title(t) if !t.is_empty() && meta.title.is_none() => meta.title = Some(t),
+            HeadItem::Entry { name, value } => match name.as_str() {
+                "keywords" => meta.entries.extend(
+                    value
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|k| !k.is_empty())
+                        .map(|k| (name.clone(), k.to_string())),
+                ),
+                "description" | "author" => meta.entries.push((name, value)),
+                n if n.starts_with("dcterms.") || n.starts_with("citation_") => {
+                    meta.entries.push((name, value))
+                }
+                _ => match dropped.iter_mut().find(|(n, _)| *n == name) {
+                    Some(d) => d.1 += 1,
+                    None => dropped.push((name, 1)),
+                },
+            },
+            _ => {}
+        }
+    }
+    for (name, n) in dropped {
+        let message = match n {
+            1 => format!("meta {name}"),
+            n => format!("meta {name} ({n})"),
         };
-        (!value.is_empty()).then(|| value.to_string())
-    });
-    Meta { title, lang }
+        report.push(Entry::new("dropped-element", message));
+    }
+    meta
 }

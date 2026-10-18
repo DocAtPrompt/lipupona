@@ -1,0 +1,6 @@
+title: Eisenmangel
+lang: de
+description: Ursachen und Therapie
+keywords: Eisen, Ferritin
+citation_author: Huber, Anna, Gruber, Max
+dcterms.created: 2026-10-18
