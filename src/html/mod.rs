@@ -3,8 +3,9 @@
 //! It follows the tokenizer of the HTML Living Standard closely and its tree
 //! construction as far as body content needs it: optional end tags, implied
 //! table sections and rows, void elements, the line feed after `<pre>`,
-//! raw text elements and self-closing tags in SVG and MathML. Elements of the
-//! head, `html`, `head` and `body` tags and the doctype are skipped. What it
+//! raw text elements and self-closing tags in SVG and MathML. The head is
+//! collected apart from the body ([`parse_document`]); `html`, `head` and
+//! `body` tags give their attributes, the doctype is skipped. What it
 //! does not do — foster parenting, the adoption agency for misnested
 //! formatting elements — concerns HTML that is outside every profile anyway
 //! and is passed through as it is.
@@ -32,9 +33,47 @@ pub(crate) fn too_deep() -> crate::Diagnostic {
 /// Parses the body of an HTML document and returns the children of `body`.
 /// Spans are byte offsets into `input`.
 pub fn parse(input: &str) -> Vec<Node> {
+    parse_with(input, false).nodes
+}
+
+/// A whole document: the children of `body`, and what stands around them.
+#[derive(Debug, Clone, Default)]
+pub struct Document {
+    pub nodes: Vec<Node>,
+    /// The children of the head in order, then comments outside `html`.
+    pub head: Vec<HeadPart>,
+    pub html_attrs: Vec<Attr>,
+    pub head_attrs: Vec<Attr>,
+    pub body_attrs: Vec<Attr>,
+}
+
+/// A child of the head: its source (LF line ends), and for an element its
+/// name, its attributes and, for `title`, its decoded text.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HeadPart {
+    pub source: String,
+    pub element: Option<(String, Vec<Attr>)>,
+    pub text: String,
+}
+
+/// Parses a whole document (SPEC §3.7): the body as [`parse`] does, and the
+/// head, as a browser ends it — at `</head>`, at `<body>`, or at the first
+/// content that has no place in a head.
+pub fn parse_document(input: &str) -> Document {
+    parse_with(input, true)
+}
+
+fn parse_with(input: &str, document: bool) -> Document {
     let prepared = prepare(input);
+    // A document's body ends at its last `</body>` when only comments and
+    // `</html>` follow, so that an element left open in it cannot take the
+    // end of the document in (C14).
+    let (src, tail) = match document {
+        true => split_tail(&prepared.text),
+        false => (prepared.text.as_str(), ""),
+    };
     let mut p = Parser {
-        src: &prepared.text,
+        src,
         pos: 0,
         stack: Vec::new(),
         root: Vec::new(),
@@ -42,14 +81,77 @@ pub fn parse(input: &str) -> Vec<Node> {
         ignore_lf: false,
         too_deep: false,
         skipped: Vec::new(),
+        document,
+        outside: document,
+        in_body: false,
+        doc: Document::default(),
+        outside_parts: Vec::new(),
     };
     p.run();
-    let mut nodes = p.root;
-    for node in nodes.iter_mut() {
+    let mut doc = std::mem::take(&mut p.doc);
+    doc.head.append(&mut p.outside_parts);
+    let mut rest = tail;
+    while let Some(k) = rest.find("<!--") {
+        let len = rest[k + 4..].find("-->").map_or(rest.len() - k, |e| e + 7);
+        doc.head.push(HeadPart {
+            source: rest[k..k + len].to_string(),
+            element: None,
+            text: String::new(),
+        });
+        rest = &rest[k + len..];
+    }
+    doc.nodes = p.root;
+    for node in doc.nodes.iter_mut() {
         remap(node, &prepared.removed);
     }
-    nodes
+    doc
 }
+
+/// `text` up to its last `</body>`, and what follows, when only whitespace,
+/// comments and `</html>` follow it; else all of `text`.
+fn split_tail(text: &str) -> (&str, &str) {
+    let lower = text.to_ascii_lowercase();
+    let Some(at) = lower.rfind("</body") else {
+        return (text, "");
+    };
+    let mut rest = &lower[at + 6..];
+    let Some(gt) = rest.find('>') else {
+        return (text, "");
+    };
+    if !rest[..gt]
+        .trim_matches(|c: char| c.is_ascii_whitespace())
+        .is_empty()
+    {
+        return (text, "");
+    }
+    rest = &rest[gt + 1..];
+    loop {
+        rest = rest.trim_start_matches(|c: char| c.is_ascii_whitespace());
+        if rest.is_empty() {
+            break;
+        }
+        if let Some(r) = rest.strip_prefix("<!--") {
+            match r.find("-->") {
+                Some(e) => rest = &r[e + 3..],
+                None => return (text, ""),
+            }
+        } else if let Some(r) = rest.strip_prefix("</html") {
+            match r.find('>') {
+                Some(e) if r[..e].trim().is_empty() => rest = &r[e + 1..],
+                _ => return (text, ""),
+            }
+        } else {
+            return (text, "");
+        }
+    }
+    (&text[..at], &text[at..])
+}
+
+/// Elements that belong in a head; any other start tag ends it.
+const HEAD_ELEMENTS: &[&str] = &[
+    "base", "basefont", "bgsound", "link", "meta", "title", "noscript", "noframes", "style",
+    "script", "template",
+];
 
 /// Text with CRLF and CR turned into LF (C2). A U+FEFF stays: inside a
 /// document it is a character, not a byte order mark.
@@ -295,6 +397,15 @@ struct Parser<'a> {
     root: Vec<Node>,
     in_head: bool,
     ignore_lf: bool,
+    /// Whether a whole document is read: comments outside `html` then go
+    /// with the head.
+    document: bool,
+    /// Before the `html` start tag, or after its end tag.
+    outside: bool,
+    /// The body has begun: a `head` start tag is ignored, as in a browser.
+    in_body: bool,
+    doc: Document,
+    outside_parts: Vec<HeadPart>,
     /// The deepest open element holds a [`TOO_DEEP`] mark already.
     too_deep: bool,
     /// Start tags beyond [`MAX_DEPTH`] that were not built, innermost last:
@@ -335,7 +446,21 @@ impl<'a> Parser<'a> {
                 None => (body, rest.len()),
             };
             self.pos += len;
-            if !self.in_head {
+            // A comment of the head that is not closed is closed (C17).
+            let closed = rest[..len].ends_with("-->") && len >= 7;
+            let part = || HeadPart {
+                source: match closed {
+                    true => rest[..len].to_string(),
+                    false => format!("{}-->", &rest[..len]),
+                },
+                element: None,
+                text: String::new(),
+            };
+            if self.in_head {
+                self.doc.head.push(part());
+            } else if self.outside {
+                self.outside_parts.push(part());
+            } else {
                 self.ignore_lf = false;
                 let node = Node::Comment(Comment {
                     text: text.to_string(),
@@ -394,17 +519,47 @@ impl<'a> Parser<'a> {
         let name = tag.name.as_str();
         self.ignore_lf = false;
         match name {
-            "html" | "body" => return,
+            "html" => {
+                self.outside = false;
+                if self.doc.html_attrs.is_empty() {
+                    self.doc.html_attrs = tag.attrs;
+                }
+                return;
+            }
+            "head" if self.in_body => return,
             "head" => {
+                self.outside = false;
                 self.in_head = true;
+                if self.doc.head_attrs.is_empty() {
+                    self.doc.head_attrs = tag.attrs;
+                }
+                return;
+            }
+            "body" => {
+                self.outside = false;
+                self.in_head = false;
+                self.in_body = true;
+                if self.doc.body_attrs.is_empty() {
+                    self.doc.body_attrs = tag.attrs;
+                }
                 return;
             }
             _ => {}
         }
-        if self.in_head {
-            self.skip_raw_text(name);
-            return;
+        self.outside = false;
+        // Before the body, an element of the head implies the head.
+        if self.document && !self.in_body && HEAD_ELEMENTS.contains(&name) {
+            self.in_head = true;
         }
+        if self.in_head {
+            if HEAD_ELEMENTS.contains(&name) {
+                self.head_element(tag, start);
+                return;
+            }
+            // Anything else ends the head, as in a browser.
+            self.in_head = false;
+        }
+        self.in_body = true;
         let foreign = self.in_foreign() || name == "svg" || name == "math";
         if !self.in_foreign() {
             self.close_for(name, start);
@@ -566,6 +721,14 @@ impl<'a> Parser<'a> {
             }
             return;
         }
+        if name == "html" && self.document {
+            self.outside = true;
+            return;
+        }
+        if !matches!(name, "body" | "head") {
+            self.in_body = true;
+            self.outside = false;
+        }
         if let Some(k) = self.skipped.iter().rposition(|n| n == name) {
             self.skipped.truncate(k);
             return;
@@ -696,9 +859,19 @@ impl<'a> Parser<'a> {
     }
 
     fn text(&mut self, mut text: String, mut span: std::ops::Range<usize>) {
-        if self.in_head {
+        let blank = text.chars().all(|c| c.is_ascii_whitespace());
+        if self.document && !self.in_body && blank {
             return;
         }
+        if self.in_head || self.outside {
+            if text.chars().all(|c| c.is_ascii_whitespace()) {
+                return;
+            }
+            // Text ends the head, as in a browser.
+            self.in_head = false;
+            self.outside = false;
+        }
+        self.in_body = true;
         if std::mem::take(&mut self.ignore_lf) && text.starts_with('\n') {
             text.remove(0);
             span.start += 1;
@@ -723,12 +896,35 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Inside the head, the content of raw text elements is skipped whole.
-    fn skip_raw_text(&mut self, name: &str) {
-        if RAW_TEXT.contains(&name) || RCDATA.contains(&name) {
+    /// An element of the head, from its start tag at `start` (whose end is
+    /// `self.pos`) to its end tag: kept whole, with its source.
+    fn head_element(&mut self, tag: Tag, start: usize) {
+        let name = tag.name.as_str();
+        let mut text = String::new();
+        let mut unclosed = false;
+        if !VOID.contains(&name) && !tag.self_closing {
             let rest = &self.src[self.pos..];
-            self.pos += find_end_tag(rest, name).unwrap_or(rest.len());
+            let found = find_end_tag(rest, name);
+            unclosed = found.is_none();
+            let close = found.unwrap_or(rest.len());
+            if name == "title" {
+                text = decode(&rest[..close], false);
+            }
+            let after = rest[close..]
+                .find('>')
+                .map_or(rest.len(), |k| close + k + 1);
+            self.pos += after;
         }
+        // An element of the head that is not closed is closed (C17).
+        let mut source = self.src[start..self.pos].to_string();
+        if unclosed {
+            source.push_str(&format!("</{name}>"));
+        }
+        self.doc.head.push(HeadPart {
+            source,
+            element: Some((tag.name, tag.attrs)),
+            text,
+        });
     }
 }
 
@@ -795,6 +991,26 @@ pub(crate) fn fragment_len_in(
         ends.insert(base + start, None);
     }
     None
+}
+
+/// The start tag at the start of `s`: its name, its attributes and its
+/// length in bytes, if it is closed.
+pub(crate) fn start_tag_at(s: &str) -> Option<(String, Vec<Attr>, usize)> {
+    if !s.starts_with('<') || !s.as_bytes().get(1).is_some_and(|b| b.is_ascii_alphabetic()) {
+        return None;
+    }
+    let tag = scan_tag(s, 1)?;
+    Some((tag.name, tag.attrs, tag.len))
+}
+
+/// Whether `name` is a void element.
+pub(crate) fn is_void(name: &str) -> bool {
+    VOID.contains(&name)
+}
+
+/// Offset of the end tag of `name` in `s`, in any case.
+pub(crate) fn end_tag_in(s: &str, name: &str) -> Option<usize> {
+    find_end_tag(s, name)
 }
 
 struct Tag {

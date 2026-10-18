@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "A comment before the html start tag is head content outside the profile, written at the end of the head."

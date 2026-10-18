@@ -7,6 +7,12 @@ figures, callouts, folding sections. It is not a website. It is the profile of
 the first implementation, konsona, and the one the test suite assumes unless a
 case names another.
 
+## The head
+
+The head is the same in every profile (SPEC §3.7): `lang` on `html`,
+`<meta charset="utf-8">`, at most one `title`, and entries
+`<meta name="…" content="…">`.
+
 ## Elements
 
 ### Blocks

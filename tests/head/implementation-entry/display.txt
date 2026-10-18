@@ -1,0 +1,7 @@
+---
+lang: de
+title: Eisenmangel
+konsona:schema: 1
+---
+
+# Eisenmangel

@@ -2,7 +2,6 @@
 //! files, and the converters. Unlike the libraries it calls, it reads and
 //! writes files (docs/ports.md §1).
 
-mod document;
 mod folder;
 
 use std::collections::HashSet;
@@ -10,6 +9,7 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use lipupona::head::{Head, HeadItem};
 use md2lipupona::Flavour;
 
 const USAGE: &str = "\
@@ -40,7 +40,7 @@ options:
   -V, --version         show the version
 
 Without a file, or with -, the input is standard input. A file that is a
-whole document is checked by its body. Diagnostics and reports go to
+whole document is checked with its head. Diagnostics and reports go to
 standard error as `<file>: <code>: <message>`, check's findings to standard
 output.
 
@@ -385,26 +385,32 @@ fn convert(
             if !args.document {
                 return (out.html, notes);
             }
+            // The front matter's keys are the head's names (SPEC §3.7).
             let m = out.meta;
-            let mut meta = Vec::new();
-            let mut add = |name: &str, value: Option<String>| {
-                if let Some(v) = value.filter(|v| !v.is_empty()) {
-                    meta.push((name.to_string(), v));
-                }
-            };
-            add("dcterms.created", m.created);
-            add("dcterms.source", m.source);
-            add("keywords", Some(m.tags.join(", ")));
-            add("aliases", Some(m.aliases.join(", ")));
-            for (key, value) in m.other {
-                add(&key, Some(value));
-            }
-            let head = document::Head {
-                title: m.title.or_else(stem),
+            let mut notes = notes;
+            let mut head = Head {
                 lang: m.lang,
-                meta,
+                ..Head::default()
             };
-            (document::write(&head, &out.html), notes)
+            head.items
+                .extend(m.title.or_else(stem).map(HeadItem::Title));
+            let mut entries: Vec<(String, String)> = Vec::new();
+            entries.extend(m.created.map(|v| ("created".to_string(), v)));
+            entries.extend(m.source.map(|v| ("source".to_string(), v)));
+            entries.extend(m.aliases.into_iter().map(|v| ("aliases".to_string(), v)));
+            entries.extend(m.tags.into_iter().map(|v| ("tags".to_string(), v)));
+            entries.extend(m.other);
+            for (name, value) in entries {
+                if lipupona::head::is_name(&name) && !value.contains('\n') {
+                    head.items.push(HeadItem::Entry {
+                        name: name.to_ascii_lowercase(),
+                        value,
+                    });
+                } else {
+                    notes.push(format!("dropped-entry: {name} has no place in a head"));
+                }
+            }
+            (lipupona::document(&head, &out.html).text, notes)
         }
         Command::FromHtml => {
             let mode = match args.article {
@@ -416,12 +422,13 @@ fn convert(
             if !args.document {
                 return (out.html, notes);
             }
-            let head = document::Head {
-                title: out.meta.title.or_else(stem),
+            let mut head = Head {
                 lang: out.meta.lang,
-                meta: Vec::new(),
+                ..Head::default()
             };
-            (document::write(&head, &out.html), notes)
+            head.items
+                .extend(out.meta.title.or_else(stem).map(HeadItem::Title));
+            (lipupona::document(&head, &out.html).text, notes)
         }
         Command::Check => unreachable!("check has no single output"),
     }
@@ -463,13 +470,9 @@ fn check(files: &[String]) -> ExitCode {
                 continue;
             }
         };
-        let body = match document::body(&src) {
-            Some(range) => &src[range],
-            None => &src[..],
-        };
-        let out = lipupona::canon(body);
+        let out = lipupona::canon(&src);
         let mut findings = Vec::new();
-        if out.text != body {
+        if out.text != src {
             findings.push("not canonical".to_string());
         }
         findings.extend(

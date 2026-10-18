@@ -70,6 +70,25 @@ fn spans_tile_the_notation() {
 }
 
 #[test]
+fn a_document_reads_back_from_its_front_matter() {
+    let notation =
+        "---\nlang: de\ntitle: Eisenmangel\ntags: [labor, anämie]\n---\n\n# Eisenmangel\n";
+    let html = run(&["html"], notation);
+    assert_eq!(html.code, 0);
+    assert!(
+        html.stdout
+            .starts_with("<!DOCTYPE html>\n<html lang=\"de\">\n")
+    );
+    assert!(
+        html.stdout
+            .contains("<meta name=\"tags\" content=\"anämie\">\n")
+    );
+    let back = run(&["display"], &html.stdout);
+    assert_eq!((back.code, back.stdout.as_str()), (0, notation));
+    assert_eq!(run(&["check"], &html.stdout).code, 0);
+}
+
+#[test]
 fn canon_reports_diagnostics_on_stderr() {
     let out = run(&["canon"], "<P>Eisen <!--x-->und Folsäure</P>");
     assert_eq!(out.code, 0);
@@ -103,7 +122,7 @@ fn a_converted_document_passes_the_check() {
     assert_eq!(
         std::fs::read_to_string(html).unwrap(),
         "<!DOCTYPE html>\n<html lang=\"de\">\n<head>\n<meta charset=\"utf-8\">\n\
-         <title>eisenmangel</title>\n<meta name=\"keywords\" content=\"labor\">\n\
+         <title>eisenmangel</title>\n<meta name=\"tags\" content=\"labor\">\n\
          </head>\n<body>\n\
          <p>Ferritin <strong>erniedrigt</strong>, siehe [[Ferritin]].</p>\n\
          </body>\n</html>\n"

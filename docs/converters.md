@@ -4,7 +4,9 @@
 flavours `commonmark`, `gfm` and `obsidian`; `converters/html2lipupona`,
 modes *export* and *article*). The command `lipupona` (`cli/`) runs both:
 `from-md` and `from-html` (`--article`), with `--document` for a whole
-document whose head it writes from the returned values, on a file or on a
+document whose head (SPEC §3.7) it writes from the returned values — a
+Markdown front matter's keys become the head's names, a list one entry per
+item —, on a file or on a
 folder (with a resolver for wikilinks, §2). **Informative, not part of the
 format.** The converters use the core library (reader, writer,
 canonicaliser). Nothing here changes `SPEC.md`.

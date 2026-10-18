@@ -1,0 +1,9 @@
+---
+lang: de
+title: Eisenmangel
+tags: [labor, anämie]
+aliases: Sideropenie
+created: 2026-10-18
+---
+
+# Eisenmangel

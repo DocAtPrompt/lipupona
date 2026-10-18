@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "A whole document is written by C15 and C16: doctype, lang, charset first, entries with their name in lower case, the title collapsed."

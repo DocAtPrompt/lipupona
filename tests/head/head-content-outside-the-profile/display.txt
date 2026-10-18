@@ -1,0 +1,7 @@
+---
+title: Eisenmangel
+<link rel="stylesheet" href="praxis.css">
+<body class="druck">
+---
+
+# Eisenmangel

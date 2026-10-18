@@ -1,0 +1,3 @@
+kind = "tolerance"
+section = "5.15"
+note = "A second title is reported, and the first is taken."

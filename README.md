@@ -86,7 +86,7 @@ Version 0.3.0, a draft for review.
 
 - [`SPEC.md`](SPEC.md) — the specification
 - [`profiles/reference.md`](profiles/reference.md) — the reference profile
-- [`tests/`](tests/) — the test suite, 358 cases in a language-neutral format
+- [`tests/`](tests/) — the test suite, 373 cases in a language-neutral format
 - [`docs/converters.md`](docs/converters.md) — work plan for md2lipupona and
   html2lipupona; [`converters/md2lipupona`](converters/md2lipupona) converts
   CommonMark, GFM and Obsidian's Markdown,
@@ -96,7 +96,9 @@ Version 0.3.0, a draft for review.
 - [`docs/ports.md`](docs/ports.md) — plan for bindings and ports, and the
   constraints on the core that keep them possible
 - `src/` — the reference implementation in Rust: `canon`, `html` (reading
-  notation), `display` (writing it) and, for editors, `spans` (markup,
+  notation), `display` (writing it) — fragments and whole documents, whose
+  head the notation writes as a front matter (§3.7, §5.15) — and, for
+  editors, `spans` (markup,
   content, breaks, separators and invisible characters of any notation,
   §5.14). It passes the whole suite; property tests check L1, L2 and L4 on
   generated documents. `cargo test` runs everything.

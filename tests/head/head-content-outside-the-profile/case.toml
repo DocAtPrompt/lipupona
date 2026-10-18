@@ -1,0 +1,3 @@
+kind = "roundtrip"
+section = "5.15"
+note = "Head content and attributes outside the profile pass through as lines beginning with <."

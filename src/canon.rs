@@ -4,17 +4,35 @@ use unicode_normalization::UnicodeNormalization;
 
 use crate::diag::{Code, Diagnostic};
 use crate::dom::{Attr, Element, Node, is_html_space};
+use crate::head::{self, Head};
 use crate::profile::{Kind, Model, Profile};
 use crate::{Output, html, url};
 
 /// Reads HTML and writes it canonically. Blocks outside the profile and
 /// islands come back as they were stored, with LF line ends (C2).
 pub fn canon(input: &str, profile: &Profile) -> Output {
+    if head::is_document(input) {
+        let (head, nodes, diagnostics) = read_document(input, profile);
+        return Output {
+            text: head.serialize(&serialize(&nodes, profile)),
+            diagnostics,
+        };
+    }
     let (nodes, diagnostics) = read(input, profile);
     Output {
         text: serialize(&nodes, profile),
         diagnostics,
     }
+}
+
+/// Reads a whole document: its head (§3.7) and its body as [`read`] does.
+pub fn read_document(input: &str, profile: &Profile) -> (Head, Vec<Node>, Vec<Diagnostic>) {
+    let doc = html::parse_document(input);
+    let (head, mut diagnostics) = Head::from_document(&doc);
+    report_comments(&doc.nodes, &mut diagnostics);
+    let mut nodes = profile.check(input, doc.nodes, &mut diagnostics);
+    normalize(&mut nodes, profile);
+    (head, nodes, diagnostics)
 }
 
 /// Reads HTML into a checked, normalised tree: what is outside the profile
@@ -63,6 +81,22 @@ pub fn store(mut nodes: Vec<Node>, profile: &Profile) -> Output {
     }
 }
 
+/// Stores a document that was built: its head and its body, as [`store`]
+/// stores a fragment.
+pub fn store_document(head: Head, nodes: Vec<Node>, profile: &Profile) -> Output {
+    let body = store(nodes, profile);
+    let text = head.serialize(&body.text);
+    let (head, _) = Head::from_document(&html::parse_document(&text));
+    let mut diagnostics = body.diagnostics;
+    // What in the head is outside the profile, as a reader of it sees it.
+    let (_, head_diags) = Head::from_document(&html::parse_document(&head.serialize("")));
+    diagnostics.extend(head_diags);
+    Output {
+        text: head.serialize(&body.text),
+        diagnostics,
+    }
+}
+
 pub fn normalize(nodes: &mut Vec<Node>, profile: &Profile) {
     for node in nodes.iter_mut() {
         normalize_values(node);
@@ -83,7 +117,7 @@ fn normalize_values(node: &mut Node) {
     }
 }
 
-fn normalize_attrs(el: &mut Element) {
+pub(crate) fn normalize_attrs(el: &mut Element) {
     let mut attrs: Vec<Attr> = Vec::with_capacity(el.attrs.len());
     for a in el.attrs.drain(..) {
         let mut value: String = a.value.nfc().collect();
@@ -348,7 +382,7 @@ fn write_phrasing(nodes: &[Node], out: &mut String) {
     }
 }
 
-fn start_tag(el: &Element) -> String {
+pub(crate) fn start_tag(el: &Element) -> String {
     let mut s = format!("<{}", el.name);
     for a in &el.attrs {
         s.push(' ');

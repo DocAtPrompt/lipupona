@@ -105,6 +105,10 @@ lipupona keeps HTML as the document and moves the convenience into a view:
 - **Island** — a subtree the profile declares opaque; passed through unread
   (§3.6).
 - **Implementation** — software that reads, writes or edits lipupona documents.
+- **Fragment**, **document** — a fragment is body content alone; a document
+  is a whole HTML document, its head included (§3.7, §4, §5.15).
+- **Head** — the `head` of a document and the language on `html` (§3.7).
+  **Front matter** — the head as notation writes it (§5.15).
 
 ---
 
@@ -114,9 +118,8 @@ lipupona keeps HTML as the document and moves the convenience into a view:
 
 A profile MUST declare:
 
-1. **Elements**, each with exactly one *kind*: block or inline. Elements of
-   the document head are owned by the implementation and outside this
-   specification.
+1. **Elements**, each with exactly one *kind*: block or inline. The head is
+   the same in every profile (§3.7).
 2. For every block its **content model**, exactly one of:
    - *phrasing* — phrasing only (`p`, `h1`);
    - *blocks* — blocks only (`blockquote`, `div`);
@@ -227,12 +230,34 @@ island that breaks its whitelist is passed through all the same and reported
 (`island-rejected`); whether and how it is rendered is the implementation's
 decision.
 
+### 3.7 The head
+
+The head is the same in every profile. A document's head holds:
+
+- its language, as `lang` on `html`;
+- `<meta charset="utf-8">`;
+- at most one `title`, holding text;
+- **entries** `<meta name="…" content="…">`: a name — an ASCII letter, then
+  ASCII letters, digits, `-`, `_`, `.` and `:` — and a value, any text
+  without a line feed. A name may occur more than once. Each entry holds one value, so a list is a
+  run of entries of the same name, in order, as `citation_author` is
+  written. An implementation's own entries (`konsona:schema`) are entries
+  like any other.
+
+Anything else in the head — `script`, `style`, `link`, `base`, a `meta` with
+other attributes (`property`, `http-equiv`), a `meta` whose name or value
+does not fit the rule above, a second `title`, comments —,
+any attribute of `html` other than `lang`, any attribute of `head` or `body`,
+and a comment before the `html` start tag or after its end tag is outside
+the profile: it passes through as stored and is reported (`out-of-profile`;
+L5, L6).
+
 ---
 
 ## 4 · Canonical serialization
 
-A canonical document has exactly one byte sequence. The rules apply to the
-`body`; the head is the implementation's.
+A canonical document has exactly one byte sequence. C1–C14 apply to the
+body; C15–C17 add the document around it.
 
 *File and characters*
 
@@ -315,6 +340,30 @@ A canonical document has exactly one byte sequence. The rules apply to the
   a serialization rule.
 - **C14** Canonicalisation is idempotent: `canon(canon(x)) == canon(x)`.
 
+*The document*
+
+A lipupona text is a **fragment** — body content alone, as in every example
+before this section — or a **document**: input that begins, after a byte
+order mark and whitespace, with a doctype or an `html` start tag (in any
+case). Canonicalisation keeps the form it reads.
+
+- **C15** A canonical document is, line by line: `<!DOCTYPE html>`; the
+  `html` start tag, with `lang="…"` if the document has a language;
+  `<head>`; `<meta charset="utf-8">`; the other children of the head, each
+  on a line of its own, not indented, in their order; `</head>`; `<body>`;
+  the body's content as C1–C14 write it, its top level not indented;
+  `</body>`; `</html>`. Attributes outside the profile on `html`, `head`
+  and `body` stay on their start tags, ordered by C11.
+- **C16** An entry is written `<meta name="…" content="…">`, the name in
+  lower case, the value by C3–C5; the title `<title>…</title>`, its text by
+  C3–C5 with its whitespace collapsed and trimmed (C7). The charset is
+  UTF-8 (C1): a `meta charset`, or a `meta http-equiv="content-type"` that
+  names a charset, is replaced by the one `<meta charset="utf-8">` of C15.
+- **C17** Head content outside the profile is written as stored, with LF
+  line ends; a comment outside `html` is written at the end of the head.
+  What in it is not closed — a comment without `-->`, an element without its
+  end tag — is closed, so that it cannot take in the rest of the document.
+
 ---
 
 ## 5 · Notation
@@ -371,7 +420,7 @@ tolerated forms of §6:
 | `- `, `1. ` (any number) | list item (§5.6) |
 | `: ` or `:` alone, directly after a paragraph of one line | definition list (§5.6.1) |
 | `>` at the start of a line | blockquote (§5.7), callout if followed by ` [!` (§7.3) |
-| `---` alone | `hr` |
+| `---` alone | `hr`; as the first line, perhaps a front matter (§5.15) |
 | three or more backticks or tildes | code fence (§5.10) or raw block (§5.11) |
 | `\|` at the start of a line | table (§5.9) |
 | `.name…` matching §5.4 | element line |
@@ -846,6 +895,90 @@ element line except its content), *content*, *break* (a line break that is a
 (non-breaking space, soft hyphen, zero-width and private-use characters). An
 editor paints every character exactly once; dimming markup is what makes the
 notation read like prose.
+
+
+### 5.15 The front matter
+
+A document's head (§3.7) is written as its front matter, as Obsidian and
+Pandoc write metadata in Markdown: the first line of the notation is `---`,
+and the next line that is `---` ends it. Every line in between is a **head
+line**:
+
+- a blank line;
+- an **entry** `key: value`, or `key:` with list items on the lines below
+  it;
+- a **list item**: indentation, `- `, a value;
+- a line beginning with `<`: head content outside the profile, as it is
+  stored (C17). An element whose start tag begins the line and whose end tag
+  is not on it goes on to the line that holds its end tag (a `script` over
+  several lines), a comment to its `-->`.
+
+If a line in between is none of these, or no line `---` follows, there is no
+front matter: the first line is an `hr` (§5.2) and the text is a
+fragment. A notation with a front matter is a document; one without is a
+fragment.
+
+```
+---
+title: Eisenmangel
+lang: de
+tags: [labor, anämie]
+aliases:
+  - Sideropenie
+created: 2026-10-18
+---
+
+# Eisenmangel
+```
+
+```html
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Eisenmangel</title>
+<meta name="tags" content="labor">
+<meta name="tags" content="anämie">
+<meta name="aliases" content="Sideropenie">
+<meta name="created" content="2026-10-18">
+</head>
+<body>
+<h1>Eisenmangel</h1>
+</body>
+</html>
+```
+
+- **Keys** are names of §3.7, read without regard to ASCII case. A key is
+  followed by `:` and a space, or by `:` at the end of the line, so that
+  `konsona:schema: 1` is the key `konsona:schema`. `title` is the title,
+  `lang` the language; every other key gives entries of its name.
+- **Values** are text: `1`, `true` and `2026-10-18` are the text they show.
+  A value is plain — the rest of the line, without the spaces at its ends —
+  or quoted: `"…"`, in which `\"` and `\\` stand for `"` and `\`, or `'…'`,
+  in which `''` stands for `'`. A **list** is written `[a, b]`, its items
+  plain (then without `,`, `[` and `]`) or quoted, or as list items below
+  `key:`. Each value of a list is one entry. `key: []`, and `key:` with no
+  items below it, give no entry; `key: ""` gives an entry with an empty
+  value.
+- **Order.** Entries keep their order; a key written twice gives entries in
+  both places. `title` and `lang` take one value. A second one, or a list of
+  more than one, is reported (`constraint-violated`), and only the first
+  value is taken.
+- **Attributes** outside the profile on `html`, `head` or `body` are
+  written as a line with that start tag, holding only them:
+  `<body class="druck">`.
+- **The display** writes `lang` first, then the children of the head in
+  their order — the title as `title: …`, a run of entries of one name as one
+  key (`key: value`, or `key: [a, b]` for two or more), content outside the
+  profile as stored —, then the `html`, `head` and `body` lines. A value is
+  quoted, with `"`, only when it would not read back as plain: when it is
+  empty, begins or ends with a space, begins with one of `"` `'` `[` `]`
+  `{` `}` `-` `#` `&` `*` `!` `|` `>` `%` `@` or a backtick, or holds `: `
+  or ` #`; in a list also when it holds `,`. An empty head is written as
+  two lines `---`. One blank line follows the front matter when a body
+  follows.
+- **W2.** A fragment whose display begins with an `hr` that would read as a
+  front matter writes that `hr` as `.hr`.
 
 ---
 

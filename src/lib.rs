@@ -9,6 +9,7 @@
 pub mod canon;
 pub mod diag;
 pub mod dom;
+pub mod head;
 pub mod html;
 pub mod notation;
 pub mod profile;
@@ -65,4 +66,10 @@ pub fn display(html: &str) -> Output {
 /// canonical is split as the reader sees it.
 pub fn spans(notation: &str) -> Vec<Span> {
     notation::spans(notation, &Profile::reference(IMPLEMENTATION))
+}
+
+/// A whole document of `head` around `body`, the canonical HTML of a
+/// fragment (as a converter returns it), under the reference profile (C15).
+pub fn document(head: &head::Head, body: &str) -> Output {
+    canon(&head.serialize(body))
 }

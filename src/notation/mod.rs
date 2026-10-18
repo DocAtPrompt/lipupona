@@ -2,6 +2,7 @@
 //! display of a tree.
 
 mod block;
+mod front;
 mod inline;
 mod scan;
 mod syntax;
@@ -17,10 +18,16 @@ use crate::{Output, canon};
 pub fn html(notation: &str, profile: &Profile) -> Output {
     let text = crate::html::lf(notation.strip_prefix('\u{feff}').unwrap_or(notation));
     let lines: Vec<&str> = text.split('\n').collect();
+    // A front matter makes the notation a document (§5.15).
+    let front = front::read(&lines);
+    let body = &lines[front.as_ref().map_or(0, |f| f.used)..];
     let mut reader = block::Reader::new(profile);
-    let nodes = reader.blocks(&lines, false);
-    let mut out = canon::store(nodes, profile);
-    let mut diagnostics = reader.diags;
+    let nodes = reader.blocks(body, false);
+    let (mut out, mut diagnostics) = match front {
+        Some(f) => (canon::store_document(f.head, nodes, profile), f.diags),
+        None => (canon::store(nodes, profile), Vec::new()),
+    };
+    diagnostics.append(&mut reader.diags);
     let too_deep = crate::html::too_deep();
     if diagnostics.contains(&too_deep) {
         out.diagnostics.retain(|d| *d != too_deep);
@@ -84,7 +91,13 @@ pub fn spans(notation: &str, profile: &Profile) -> Vec<Span> {
     let lines: Vec<&str> = text.split('\n').collect();
     let mut reader = block::Reader::new(profile);
     reader.track = Some(track::Track::new(&text));
-    reader.blocks(&lines, false);
+    let front = front::read(&lines);
+    if let (Some(f), Some(t)) = (&front, &mut reader.track) {
+        for v in &f.values {
+            t.mark_slice(v, track::Mark::Content);
+        }
+    }
+    reader.blocks(&lines[front.map_or(0, |f| f.used)..], false);
     let mut marks: Vec<Option<track::Mark>> = vec![None; text.len()];
     for (from, to, mark) in reader.track.map(|t| t.marks).unwrap_or_default() {
         for m in marks.iter_mut().take(to).skip(from) {
@@ -137,12 +150,24 @@ fn is_invisible(ch: char) -> bool {
 /// (`display` of the specification). Blocks outside the profile and islands
 /// are shown as raw blocks.
 pub fn display(html: &str, profile: &Profile) -> Output {
-    let (nodes, diagnostics) = canon::read(html, profile);
     let writer = write::Writer { profile };
-    Output {
-        text: writer.display(&nodes),
-        diagnostics,
+    if crate::head::is_document(html) {
+        let (head, nodes, diagnostics) = canon::read_document(html, profile);
+        let body = writer.display(&nodes);
+        let mut text = front::write(&head);
+        if !body.is_empty() {
+            text.push('\n');
+            text.push_str(&body);
+        }
+        return Output { text, diagnostics };
     }
+    let (nodes, diagnostics) = canon::read(html, profile);
+    let mut text = writer.display(&nodes);
+    // W2: an hr that would begin a front matter is written `.hr` (§5.15).
+    if text.starts_with("---\n") && front::read(&text.split('\n').collect::<Vec<_>>()).is_some() {
+        text.replace_range(..3, ".hr");
+    }
+    Output { text, diagnostics }
 }
 
 #[cfg(test)]
@@ -293,6 +318,13 @@ mod tests {
     }
 
     const NOTATION: &[&str] = &[
+        "---\n",
+        "title: Eisen\n",
+        "tags: [a, \"b, c\"]\n",
+        "lang: de\n",
+        "  - x\n",
+        "<link rel=\"x\">\n",
+        "<body class=\"y\">\n",
         "\n",
         "\n",
         "\n\n",
@@ -530,14 +562,22 @@ mod tests {
         }
         let text = crate::html::lf(input.strip_prefix('\u{feff}').unwrap_or(input));
         let lines: Vec<&str> = text.split('\n').collect();
+        // A front matter's values are content but no text of the tree: the
+        // body, after the front matter's line feeds, is compared.
+        let used = front::read(&lines).map_or(0, |f| f.used);
         let mut tree = String::new();
         tree_text(
-            &block::Reader::new(profile).blocks(&lines, false),
+            &block::Reader::new(profile).blocks(&lines[used..], false),
             &mut tree,
         );
+        let mut feeds = 0;
         let content: String = spans
             .iter()
-            .filter(|s| s.kind == SpanKind::Content)
+            .filter(|s| {
+                let before = feeds;
+                feeds += input[s.range.clone()].matches('\n').count();
+                before >= used && s.kind == SpanKind::Content
+            })
             .map(|s| &input[s.range.clone()])
             .collect();
         // Line feeds and invisible characters aside: a `br` may be written

@@ -25,7 +25,8 @@ tests/<area>/<case>/
 
 `<area>` follows the sections of the specification: `serialization`,
 `lines`, `short-forms`, `element-line`, `inline`, `lists`, `quote`,
-`tables`, `code`, `raw`, `escaping`, `tolerance`, `callouts`, `profile`.
+`tables`, `code`, `raw`, `escaping`, `tolerance`, `callouts`, `profile`,
+`head`.
 
 ## Kinds
 
@@ -65,7 +66,9 @@ the content is not checked.
   included. This is how C1 and C2 are tested. Its other files follow the
   rules. Git does not
   convert line ends under `tests/` (`.gitattributes`).
-- `expected.html` contains `body` content only, no `body` tag.
+- `expected.html` contains `body` content only, no `body` tag — except in
+  a case about the head (area `head`), where input and expectation are
+  whole documents (SPEC §3.7, C15–C17, §5.15).
 - `case.toml` keys: `kind`, `profile` (default `reference`), `section`
   (e.g. `"5.5.2"`; for a converter case the section of `docs/converters.md`),
   `note` (one sentence: what the case is about), `raw` (default `false`),
