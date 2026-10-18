@@ -1,0 +1,3 @@
+kind = "conversion"
+section = "2"
+note = "Without definition lists asked for, a line beginning with a colon stays text of its paragraph."

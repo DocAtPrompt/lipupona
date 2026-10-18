@@ -128,6 +128,7 @@ fn usage_errors_exit_with_2() {
         &["frob"],
         &["canon", "--flavour", "gfm"],
         &["display", "--document"],
+        &["from-html", "--definition-lists"],
         &["html", "a", "b"],
         &["check", "-o", "x"],
         &["from-md", "--flavour", "wiki"],

@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "2"
+note = "Several colon lines after a term are several definitions of it."
+definition_lists = true

@@ -26,6 +26,7 @@ commands:
 options:
   -o, --output <file>   write to <file> instead of standard output
   --flavour <name>      from-md: commonmark (default), gfm or obsidian
+  --definition-lists    from-md: read `Term` / `: definition` as a list
   --document            from-md, from-html: write a whole document, its head
                         from the converter's values (title, lang, tags …)
   -h, --help            show this text
@@ -55,6 +56,7 @@ struct Args {
     files: Vec<String>,
     output: Option<String>,
     flavour: Option<Flavour>,
+    definition_lists: bool,
     document: bool,
 }
 
@@ -100,6 +102,7 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
         files: Vec::new(),
         output: None,
         flavour: None,
+        definition_lists: false,
         document: false,
     };
     let mut only_files = false;
@@ -129,12 +132,16 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
                 })
             }
             "--document" if inline.is_none() => parsed.document = true,
+            "--definition-lists" if inline.is_none() => parsed.definition_lists = true,
             _ => return Err(format!("unknown option `{arg}`")),
         }
     }
     let name = args[0].as_str();
     if parsed.flavour.is_some() && command != Command::FromMd {
         return Err(format!("`--flavour` is for from-md, not {name}"));
+    }
+    if parsed.definition_lists && command != Command::FromMd {
+        return Err(format!("`--definition-lists` is for from-md, not {name}"));
     }
     if parsed.document && !matches!(command, Command::FromMd | Command::FromHtml) {
         return Err(format!(
@@ -196,7 +203,12 @@ fn convert(args: &Args, path: &str, src: &str) -> (String, Vec<String>) {
         Command::Display => core(lipupona::display(src)),
         Command::Html => core(lipupona::html(src)),
         Command::FromMd => {
-            let out = md2lipupona::convert(src, args.flavour.unwrap_or_default());
+            let settings = md2lipupona::Settings {
+                flavour: args.flavour.unwrap_or_default(),
+                definition_lists: args.definition_lists,
+                ..Default::default()
+            };
+            let out = md2lipupona::convert_with(src, &settings);
             let notes = report(&out.report);
             if !args.document {
                 return (out.html, notes);

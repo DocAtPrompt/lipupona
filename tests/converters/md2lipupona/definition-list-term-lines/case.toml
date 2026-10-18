@@ -1,0 +1,5 @@
+kind = "conversion"
+section = "2"
+note = "In the obsidian flavour the lines of a term are joined by a line break."
+flavour = "obsidian"
+definition_lists = true

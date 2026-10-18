@@ -70,6 +70,8 @@ without `meta.txt` expects no values.
   finds every target without a `?`, maps `Ziel` to `ziel.html`,
   `Ziel#Abschnitt` to `ziel.html#Abschnitt` and keeps a name with an
   extension, `bild.png`, as it is; without the key there is no resolver),
+  `definition_lists` (md2lipupona: `true` reads definition lists, default
+  `false`),
   `mode` (converter cases of html2lipupona: `export`, the default, or
   `article`).
 - Implementation-specific names use `test`: the island marker is

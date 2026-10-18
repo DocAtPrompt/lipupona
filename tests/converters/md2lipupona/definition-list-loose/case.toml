@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "2"
+note = "The first paragraph of a loose definition leads, later blocks follow it."
+definition_lists = true

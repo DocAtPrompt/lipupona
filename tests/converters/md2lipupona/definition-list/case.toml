@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "2"
+note = "A term and its definition become dt and dd when definition lists are asked for; a blank line before the next term keeps one list."
+definition_lists = true

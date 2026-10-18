@@ -1,0 +1,4 @@
+Ferritin
+: Speichereisen
+Transferrin
+: Transportprotein

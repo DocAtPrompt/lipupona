@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "2"
+note = "A line directly below a definition continues it, even when a colon line follows."
+definition_lists = true

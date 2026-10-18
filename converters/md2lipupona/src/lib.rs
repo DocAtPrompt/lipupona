@@ -46,6 +46,9 @@ pub struct Settings<'r> {
     /// Resolves wikilinks and embeds (flavour `Obsidian`). Without one they
     /// stay text and are reported.
     pub resolve: Option<Resolver<'r>>,
+    /// Reads `Term` / `: definition` as a definition list, in any flavour.
+    /// None of the flavours' own tools shows one, so it is asked for.
+    pub definition_lists: bool,
 }
 
 /// What belongs in the document's head, for the caller to write
@@ -79,7 +82,7 @@ pub fn convert(markdown: &str, flavour: Flavour) -> Conversion {
         markdown,
         &Settings {
             flavour,
-            resolve: None,
+            ..Settings::default()
         },
     )
 }
@@ -93,6 +96,9 @@ pub fn convert_with(markdown: &str, settings: &Settings) -> Conversion {
             | Options::ENABLE_STRIKETHROUGH
             | Options::ENABLE_TASKLISTS
             | Options::ENABLE_FOOTNOTES;
+    }
+    if settings.definition_lists {
+        options |= Options::ENABLE_DEFINITION_LIST;
     }
     let mut meta = Meta::default();
     let mut entries = Vec::new();
@@ -578,17 +584,17 @@ impl<'a> Builder<'a> {
                 element("img", Vec::new()),
                 Origin::Image(dest_url.to_string(), title.to_string()),
             ),
-            // Not enabled in these flavours.
-            Tag::DefinitionList
-            | Tag::DefinitionListTitle
-            | Tag::DefinitionListDefinition
-            | Tag::MetadataBlock(_) => self.open("div", Vec::new()),
+            Tag::DefinitionList => self.open("dl", Vec::new()),
+            Tag::DefinitionListTitle => self.open("dt", Vec::new()),
+            Tag::DefinitionListDefinition => self.open("dd", Vec::new()),
+            // Not enabled: frontmatter is split off before parsing.
+            Tag::MetadataBlock(_) => self.open("div", Vec::new()),
         }
     }
 
     fn end(&mut self, tag: TagEnd) {
         match tag {
-            TagEnd::Item | TagEnd::FootnoteDefinition => {
+            TagEnd::Item | TagEnd::FootnoteDefinition | TagEnd::DefinitionListDefinition => {
                 self.unwrap_first_paragraph();
                 if let Some(f) = self.stack.last_mut() {
                     lead_then_blocks(self.profile, &mut f.el.children);
@@ -613,8 +619,9 @@ impl<'a> Builder<'a> {
         }
     }
 
-    /// A list item or footnote whose content begins with a paragraph holds
-    /// that paragraph's content directly (content model *lead*).
+    /// A list item, footnote or definition whose content begins with a
+    /// paragraph holds that paragraph's content directly (content model
+    /// *lead*).
     fn unwrap_first_paragraph(&mut self) {
         while matches!(
             self.stack.last(),

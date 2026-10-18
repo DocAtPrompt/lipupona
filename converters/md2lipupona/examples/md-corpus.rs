@@ -2,7 +2,7 @@
 //! laws of SPEC §9.2: canonical (L4), in the profile, and read back from its
 //! display (L1). Prints what fails and a tally of the report codes.
 //!
-//! `cargo run -p md2lipupona --example md-corpus -- <folder> [commonmark|gfm|obsidian] [resolve]`
+//! `cargo run -p md2lipupona --example md-corpus -- <folder> [commonmark|gfm|obsidian] [resolve] [dl]`
 //!
 //! With `resolve`, every wikilink target is found: `Ziel` as `ziel.html`, a
 //! name with an extension as it is.
@@ -15,7 +15,7 @@ use md2lipupona::{Flavour, Settings, convert_with};
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let Some(dir) = args.first() else {
-        eprintln!("usage: md-corpus <folder> [commonmark|gfm|obsidian] [resolve]");
+        eprintln!("usage: md-corpus <folder> [commonmark|gfm|obsidian] [resolve] [dl]");
         return ExitCode::FAILURE;
     };
     let flavour = match args.get(1).map(String::as_str) {
@@ -30,10 +30,11 @@ fn main() -> ExitCode {
             false => format!("{}.html", page.to_lowercase()),
         })
     };
+    let flag = |name: &str| args.iter().skip(2).any(|a| a == name);
     let settings = Settings {
         flavour,
-        resolve: (args.get(2).map(String::as_str) == Some("resolve"))
-            .then_some(&resolve as &dyn Fn(&str) -> Option<String>),
+        resolve: flag("resolve").then_some(&resolve as &dyn Fn(&str) -> Option<String>),
+        definition_lists: flag("dl"),
     };
     let mut files: Vec<_> = match std::fs::read_dir(dir) {
         Ok(r) => r

@@ -79,6 +79,7 @@ application (such as konsona) can call them and show their report.
 | `#tag`, frontmatter `tags` | returned to the caller as values | — |
 | frontmatter | returned to the caller as key/value pairs | unknown keys listed |
 | raw HTML inside Markdown | through html2lipupona, mode *export* | as html2lipupona reports |
+| definition list (`Term` / `: definition`, only when asked for) | `dl` with `dt` and `dd` | — |
 | hard line break | `br` | — |
 | horizontal rule | `hr` | — |
 
@@ -119,6 +120,19 @@ above leaves a choice:
 - **Alignment** of table columns is reported once per table.
 - **The report** is a list of entries, each a stable code and a short
   message. Cases list the codes, one per line, like `diagnostics.txt`.
+
+**Definition lists** (2026-10-18), in any flavour, only when the caller
+asks for them (`Settings::definition_lists`; the CLI's
+`--definition-lists`): none of the flavours' own tools shows `: ` as a
+definition list, so by default it stays text. When asked for, they are read
+as pulldown-cmark reads them (the syntax of PHP Markdown Extra): a term is
+a paragraph's lines directly above a `: ` line, joined like any paragraph
+(a soft line break is a space, in `obsidian` a `br`), and it is a `dt`;
+each `: ` line opens a `dd`, read like a list item, so that a loose
+definition's first paragraph leads (content model *lead*, SPEC §5.6.1) and
+an empty one stays empty. A line directly below a definition continues it,
+even if a `: ` line follows (Markdown Extra needs a blank line before the
+next term).
 
 **Decisions for `obsidian`** (2026-10-17), on top of `gfm`:
 

@@ -1,0 +1,5 @@
+Transferrin
+
+: Transportprotein
+
+  Steigt bei Eisenmangel.

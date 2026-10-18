@@ -44,6 +44,7 @@ fn run(dir: &Path) -> Result<(), String> {
     let mut kind = None;
     let mut flavour = Flavour::CommonMark;
     let mut pages = false;
+    let mut definition_lists = false;
     for line in toml.lines() {
         let Some((key, value)) = line.split_once('=') else {
             continue;
@@ -61,6 +62,7 @@ fn run(dir: &Path) -> Result<(), String> {
             }
             "resolve" if value == "pages" => pages = true,
             "resolve" => return Err(format!("unknown resolver {value}")),
+            "definition_lists" => definition_lists = value == "true",
             _ => {}
         }
     }
@@ -73,6 +75,7 @@ fn run(dir: &Path) -> Result<(), String> {
     let settings = Settings {
         flavour,
         resolve: pages.then_some(&resolve as &dyn Fn(&str) -> Option<String>),
+        definition_lists,
     };
     let out = convert_with(&input, &settings);
     same(
