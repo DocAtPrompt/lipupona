@@ -1,0 +1,6 @@
+title: Eisenmangel
+lang: de
+created: 2026-10-17
+tags: eisen, labor
+Quelle: Leitlinie Eisenmangel
+Haupt Diagnose: D50.9

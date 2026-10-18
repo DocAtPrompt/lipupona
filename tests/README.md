@@ -52,7 +52,11 @@ converter's own runner; `docs/converters.md` is their specification.
 `aliases`, `tags`, then other keys and entries as they appear; a list is
 written with
 `, ` between its items, and a key without a value is left out. A case
-without `meta.txt` expects no values. `stripped.html` (html2lipupona, mode
+without `meta.txt` expects no values. `report.txt` also lists the report
+of `Meta::head()`. `document.html`, where a case has it, is the whole
+document that `lipupona::document` writes from `Meta::head()` and the
+converted body; without it the document is not checked.
+`stripped.html` (html2lipupona, mode
 *article*) holds the content of the `stripped-region` entries, each as
 canonical HTML, one after the other in the order of the report; without it
 the content is not checked.

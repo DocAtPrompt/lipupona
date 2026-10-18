@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 
 use lipupona::dom::{Attr, Comment, Element, Node};
+use lipupona::head::{Head, HeadItem};
 use lipupona::{Code, Profile};
 pub use lipupona_convert::Entry;
 use lipupona_convert::{
@@ -65,6 +66,52 @@ pub struct Meta {
     pub tags: Vec<String>,
     /// Other frontmatter keys with their values as written.
     pub other: Vec<(String, String)>,
+}
+
+impl Meta {
+    /// The head these values make (`docs/converters.md` §2): the title,
+    /// `lang`, then one entry per value, each key in ASCII lower case as its
+    /// name; with what has no place in a head (`dropped-entry`).
+    pub fn head(&self) -> (Head, Vec<Entry>) {
+        let mut head = Head {
+            lang: self.lang.clone(),
+            ..Head::default()
+        };
+        head.items.extend(self.title.clone().map(HeadItem::Title));
+        let one = |key: &str, value: &Option<String>| {
+            value
+                .iter()
+                .map(|v| (key.to_string(), v.clone()))
+                .collect::<Vec<_>>()
+        };
+        let many = |key: &str, values: &[String]| {
+            values
+                .iter()
+                .map(|v| (key.to_string(), v.clone()))
+                .collect::<Vec<_>>()
+        };
+        let entries = one("created", &self.created)
+            .into_iter()
+            .chain(one("source", &self.source))
+            .chain(many("aliases", &self.aliases))
+            .chain(many("tags", &self.tags))
+            .chain(self.other.iter().cloned());
+        let mut report = Vec::new();
+        for (name, value) in entries {
+            if lipupona::head::is_name(&name) && !value.contains('\n') {
+                head.items.push(HeadItem::Entry {
+                    name: name.to_ascii_lowercase(),
+                    value,
+                });
+            } else {
+                report.push(Entry::new(
+                    "dropped-entry",
+                    format!("{name} has no place in a head"),
+                ));
+            }
+        }
+        (head, report)
+    }
 }
 
 /// The result of a conversion: the body content as canonical HTML (ending

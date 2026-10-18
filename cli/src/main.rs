@@ -358,6 +358,12 @@ fn convert(
             .flatten()
             .map(|s| s.to_string_lossy().into_owned())
     };
+    let document = |mut head: Head, body: &str| {
+        if !head.items.iter().any(|i| matches!(i, HeadItem::Title(_))) {
+            head.items.splice(0..0, stem().map(HeadItem::Title));
+        }
+        lipupona::document(&head, body).text
+    };
     match args.command {
         Command::Canon => core(lipupona::canon(src)),
         Command::Display => core(lipupona::display(src)),
@@ -385,32 +391,8 @@ fn convert(
             if !args.document {
                 return (out.html, notes);
             }
-            // The front matter's keys are the head's names (SPEC §3.7).
-            let m = out.meta;
-            let mut notes = notes;
-            let mut head = Head {
-                lang: m.lang,
-                ..Head::default()
-            };
-            head.items
-                .extend(m.title.or_else(stem).map(HeadItem::Title));
-            let mut entries: Vec<(String, String)> = Vec::new();
-            entries.extend(m.created.map(|v| ("created".to_string(), v)));
-            entries.extend(m.source.map(|v| ("source".to_string(), v)));
-            entries.extend(m.aliases.into_iter().map(|v| ("aliases".to_string(), v)));
-            entries.extend(m.tags.into_iter().map(|v| ("tags".to_string(), v)));
-            entries.extend(m.other);
-            for (name, value) in entries {
-                if lipupona::head::is_name(&name) && !value.contains('\n') {
-                    head.items.push(HeadItem::Entry {
-                        name: name.to_ascii_lowercase(),
-                        value,
-                    });
-                } else {
-                    notes.push(format!("dropped-entry: {name} has no place in a head"));
-                }
-            }
-            (lipupona::document(&head, &out.html).text, notes)
+            let (head, more) = out.meta.head();
+            (document(head, &out.html), [notes, report(&more)].concat())
         }
         Command::FromHtml => {
             let mode = match args.article {
@@ -422,19 +404,8 @@ fn convert(
             if !args.document {
                 return (out.html, notes);
             }
-            let mut head = Head {
-                lang: out.meta.lang,
-                ..Head::default()
-            };
-            head.items
-                .extend(out.meta.title.or_else(stem).map(HeadItem::Title));
-            head.items.extend(
-                out.meta
-                    .entries
-                    .into_iter()
-                    .map(|(name, value)| HeadItem::Entry { name, value }),
-            );
-            (lipupona::document(&head, &out.html).text, notes)
+            let (head, more) = out.meta.head();
+            (document(head, &out.html), [notes, report(&more)].concat())
         }
         Command::Check => unreachable!("check has no single output"),
     }

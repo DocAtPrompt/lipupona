@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "2"
+note = "A frontmatter value over several lines has no place in the head and is left out of it."
+flavour = "obsidian"

@@ -6,7 +6,7 @@ modes *export* and *article*). The command `lipupona` (`cli/`) runs both:
 `from-md` and `from-html` (`--article`), with `--document` for a whole
 document whose head (SPEC §3.7) it writes from the returned values — a
 Markdown front matter's keys become the head's names, a list one entry per
-item —, on a file or on a
+item (`Meta::head()`, §2) —, on a file or on a
 folder (with a resolver for wikilinks, §2). **Informative, not part of the
 format.** The converters use the core library (reader, writer,
 canonicaliser). Nothing here changes `SPEC.md`.
@@ -180,6 +180,16 @@ next term).
   every other key with its value as written, which the report lists:
   `unknown-frontmatter-key`. Flat keys with a scalar or a list are read;
   anything else is returned as written.
+- **The head** (2026-10-18). `Meta::head()` makes the head of SPEC §3.7
+  from the values: the title, `lang`, then the entries in the order
+  `created`, `source`, `aliases`, `tags` and the other keys — `aliases`
+  and `tags` one entry per item, another key one entry with its value as
+  returned —, each key in ASCII lower case as the entry's name.
+  A key that is not a name of §3.7, or a value with a line feed, has no
+  place in the head and is left out: `dropped-entry`, in the report that
+  `head()` returns. The caller writes the document around the body
+  (`lipupona::document`) and may supply a title the page has none of; the
+  command `lipupona` takes the file's name, as Obsidian does.
 - **Comments** `%%…%%` within a paragraph become HTML comments, which
   lipupona keeps hidden as Obsidian does. Comments across blocks stay text.
 - **Not read** (they stay text): math `$…$`, inline footnotes `^[…]`, block
@@ -301,7 +311,9 @@ choice:
   `citation_`, in their order. Every other entry (`viewport`, `robots`,
   `generator`, `theme-color`, a verification code, `twitter:card`) is
   dropped and reported, once per name with a count: `dropped-element`,
-  `meta viewport`.
+  `meta viewport`. `Meta::head()` makes the head from these values — the
+  title, `lang`, the entries in their order — as md2lipupona's does (§2);
+  its report stays empty, since every value was read as a head reads it.
 - **Summaries.** `dropped-element`, `dropped-attribute` and `dropped-style`
   are reported once per element, attribute or style property name, with a
   count; every other code once per occurrence. Attributes and styles are
@@ -438,6 +450,7 @@ Shared with the diagnostics of SPEC §9.3, plus:
 | `alignment-dropped` | table column alignment from Markdown not kept |
 | `list-depth-reduced` | list items below the profile's list depth moved up into its deepest level |
 | `callout-as-blockquote` | a callout where the profile allows none kept as a blockquote |
+| `dropped-entry` | a frontmatter key that is not a name of a head entry, or a value with a line feed: left out of the head (`Meta::head()`) |
 | `unknown-frontmatter-key` | a frontmatter key that has no place in a head; returned with its value |
 | `image-not-local` | an image points outside the document's folder |
 | `unresolved-link` | a link the resolver could not resolve |

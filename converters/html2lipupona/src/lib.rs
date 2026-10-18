@@ -14,7 +14,7 @@
 mod article;
 
 use lipupona::dom::{Attr, Element, Node};
-use lipupona::head::HeadItem;
+use lipupona::head::{Head, HeadItem};
 use lipupona::{Code, Profile};
 pub use lipupona_convert::Entry;
 use lipupona_convert::{
@@ -41,6 +41,25 @@ pub struct Meta {
     /// Entries of the head (SPEC §3.7): the page's metadata of its content,
     /// name and value, in order (`docs/converters.md` §3.2).
     pub entries: Vec<(String, String)>,
+}
+
+impl Meta {
+    /// The head these values make (`docs/converters.md` §3.2): the title,
+    /// `lang`, the entries in their order. Its report is empty, since every
+    /// value was read as a head reads it; it is there to match md2lipupona.
+    pub fn head(&self) -> (Head, Vec<Entry>) {
+        let mut head = Head {
+            lang: self.lang.clone(),
+            ..Head::default()
+        };
+        head.items.extend(self.title.clone().map(HeadItem::Title));
+        head.items
+            .extend(self.entries.iter().map(|(name, value)| HeadItem::Entry {
+                name: name.clone(),
+                value: value.clone(),
+            }));
+        (head, Vec::new())
+    }
 }
 
 /// The result of a conversion: the body content as canonical HTML (ending

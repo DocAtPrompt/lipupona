@@ -92,11 +92,13 @@ fn run(dir: &Path) -> Result<(), String> {
         false => Vec::new(),
     };
     want.sort();
-    let mut got: Vec<String> = out.report.iter().map(|e| e.code.clone()).collect();
+    // The report of the conversion and that of the head it makes.
+    let (head, head_report) = out.meta.head();
+    let report: Vec<_> = out.report.iter().chain(&head_report).collect();
+    let mut got: Vec<String> = report.iter().map(|e| e.code.clone()).collect();
     got.sort();
     if want != got {
-        let details: Vec<String> = out
-            .report
+        let details: Vec<String> = report
             .iter()
             .map(|e| format!("{}: {}", e.code, e.message))
             .collect();
@@ -111,6 +113,15 @@ fn run(dir: &Path) -> Result<(), String> {
         false => String::new(),
     };
     same("meta", &want_meta, &meta_lines(&out.meta))?;
+    if dir.join("document.html").exists() {
+        same(
+            "document(head, body)",
+            &file(dir, "document.html")?,
+            lipupona::document(&head, &out.html)
+                .text
+                .trim_end_matches('\n'),
+        )?;
+    }
 
     // expected.html is canonical, in the profile, and keeps L1.
     let canon = lipupona::canon(&expected);

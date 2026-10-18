@@ -1,0 +1,7 @@
+---
+title: Eisensubstitution
+dosierung:
+  morgens: 100 mg
+  abends: 50 mg
+---
+Einnahme nüchtern.

@@ -1,0 +1,4 @@
+kind = "conversion"
+section = "2"
+note = "The head made from the frontmatter has its keys in lower case as names and leaves out a key that is not a name."
+flavour = "obsidian"

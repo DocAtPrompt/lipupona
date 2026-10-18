@@ -1,0 +1,3 @@
+kind = "conversion"
+section = "3.2"
+note = "The head made from a page's values has its title, language and metadata entries in their order."
