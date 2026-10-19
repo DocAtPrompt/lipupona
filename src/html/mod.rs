@@ -215,9 +215,11 @@ fn remap(node: &mut Node, removed: &[usize]) {
     *span = original(span.start, removed)..original(span.end, removed);
 }
 
+/// Elements without content: the void elements, and the obsolete ones a
+/// browser's parser closes at once (`frame`, `param`, …).
 const VOID: &[&str] = &[
-    "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track",
-    "wbr",
+    "area", "base", "basefont", "bgsound", "br", "col", "embed", "frame", "hr", "img", "input",
+    "keygen", "link", "meta", "param", "source", "track", "wbr",
 ];
 
 const RAW_TEXT: &[&str] = &["script", "style", "xmp", "iframe", "noembed", "noframes"];
@@ -1254,6 +1256,13 @@ mod tests {
     fn optional_end_tags() {
         let t = parse("<ul><li>a<li>b</ul><p>x<p>y");
         assert_eq!(names(&t), ["ul(li li)", "p", "p"]);
+    }
+
+    #[test]
+    fn obsolete_void_elements() {
+        let t =
+            parse("<object><param name=a value=b><param name=c value=d></object><frame><frame>");
+        assert_eq!(names(&t), ["object(param param)", "frame", "frame"]);
     }
 
     #[test]
