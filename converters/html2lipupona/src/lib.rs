@@ -73,7 +73,7 @@ pub struct Conversion {
 
 /// Elements that are never content: removed without a report.
 const NEVER: &[&str] = &[
-    "script", "style", "meta", "link", "noscript", "template", "head", "title", "base",
+    "script", "style", "meta", "link", "noscript", "noframes", "template", "head", "title", "base",
 ];
 
 /// Form controls: dropped, reported.
@@ -89,7 +89,7 @@ const WRAPPERS: &[&str] = &[
 ];
 
 /// Embedded objects: a link to their source.
-const EMBEDS: &[&str] = &["iframe", "video", "audio", "embed", "object"];
+const EMBEDS: &[&str] = &["iframe", "frame", "video", "audio", "embed", "object"];
 
 /// Converts foreign HTML into a lipupona document.
 pub fn convert(html: &str, mode: Mode) -> Conversion {
@@ -209,18 +209,75 @@ impl Converter<'_> {
         self.entries.push(Entry::new(code, message));
     }
 
-    /// Converted content: blocks and phrasing as they come.
+    /// Converted content: blocks and phrasing as they come. Word's list
+    /// paragraphs that follow one another become lists.
     fn flow(&mut self, nodes: Vec<Node>) -> Vec<Node> {
         let mut out = Vec::new();
+        let mut list: Option<WordList> = None;
         for node in nodes {
             match node {
-                Node::Text(t) => out.push(Node::Text(t)),
-                Node::Element(el) => out.extend(self.element(el)),
-                // Comments of a foreign document are never content.
+                Node::Element(el) if word_list(&el).is_some() => {
+                    let (lfo, level) = word_list(&el).expect("checked");
+                    if list.as_ref().is_some_and(|l| l.lfo != lfo) {
+                        out.extend(list.take().map(WordList::finish).unwrap_or_default());
+                    }
+                    let item = self.word_item(el);
+                    list.get_or_insert_with(|| WordList::new(lfo))
+                        .push(level, item);
+                }
+                // Between the items of a list, what is left out does not end it.
+                Node::Text(t) if list.is_some() && t.text.trim().is_empty() => {}
                 Node::Comment(_) | Node::Verbatim(_) => {}
+                Node::Element(el) if list.is_some() && el.name == "p" => {
+                    let converted = self.element(el);
+                    if !converted.is_empty() {
+                        out.extend(list.take().map(WordList::finish).unwrap_or_default());
+                        out.extend(converted);
+                    }
+                }
+                Node::Text(t) => {
+                    out.extend(list.take().map(WordList::finish).unwrap_or_default());
+                    out.push(Node::Text(t));
+                }
+                Node::Element(el) => {
+                    out.extend(list.take().map(WordList::finish).unwrap_or_default());
+                    out.extend(self.element(el));
+                }
             }
         }
+        out.extend(list.take().map(WordList::finish).unwrap_or_default());
         out
+    }
+
+    /// An item of a Word list from its paragraph: the marker taken off, the
+    /// kind and number it gives, the content as phrasing that leads.
+    fn word_item(&mut self, mut el: Element) -> WordItem {
+        let marker = take_marker(&mut el.children).unwrap_or_default();
+        let (kind, number) = marker_kind(&marker);
+        if kind == "ol" && number.is_none() {
+            self.summarise("dropped-style", "mso-list numbering");
+        }
+        for (prop, _) in style(&el) {
+            if prop != "mso-list" {
+                self.drop_style_property(&prop);
+            }
+        }
+        let attrs = self.attributes(&el, "li");
+        let content = self.flow(std::mem::take(&mut el.children));
+        let content = self.phrasing_only(content);
+        let mut parts = split_at_breaks(content).into_iter();
+        let mut li = element("li", attrs);
+        li.children = parts.next().unwrap_or_default();
+        for part in parts {
+            let mut p = element("p", Vec::new());
+            p.children = part;
+            li.children.push(Node::Element(p));
+        }
+        WordItem {
+            kind,
+            number: number.unwrap_or(1),
+            li,
+        }
     }
 
     fn element(&mut self, el: Element) -> Vec<Node> {
@@ -233,7 +290,22 @@ impl Converter<'_> {
             self.summarise("dropped-element", name);
             return Vec::new();
         }
+        if style_of(&el, "display").is_some_and(|d| d == "none") {
+            self.summarise("dropped-element", &format!("{name} hidden"));
+            return Vec::new();
+        }
         match name {
+            // Word's paragraph mark.
+            "o:p" => return self.flow(el.children),
+            // A tab, or spaces Word keeps.
+            "span"
+                if style(&el)
+                    .iter()
+                    .any(|(p, _)| p == "mso-tab-count" || p == "mso-spacerun") =>
+            {
+                return vec![text(" ")];
+            }
+            "p" if el.classes().any(|c| c == "MsoTitle") => return self.kept(el, "h1"),
             "span" => {
                 let wraps = self.style_meaning(&el);
                 let children = self.flow(el.children);
@@ -348,6 +420,7 @@ impl Converter<'_> {
                 lead_then_blocks(self.profile, &mut children);
                 children
             }
+            "td" | "th" if is_empty(&children) => Vec::new(),
             "td" | "th" | "caption" | "figcaption" => self.either(children),
             "ul" | "ol" => self.items(children, "li", &["li"]),
             "dl" => {
@@ -461,7 +534,7 @@ impl Converter<'_> {
                 "vertical-align" if value == "super" => wraps.push("sup"),
                 "vertical-align" if value == "sub" => wraps.push("sub"),
                 "vertical-align" if value == "baseline" => {}
-                _ => self.summarise("dropped-style", &prop),
+                _ => self.drop_style_property(&prop),
             }
         }
         wraps
@@ -469,7 +542,15 @@ impl Converter<'_> {
 
     fn drop_style(&mut self, el: &Element) {
         for (prop, _) in style(el) {
-            self.summarise("dropped-style", &prop);
+            self.drop_style_property(&prop);
+        }
+    }
+
+    /// Reports a style property dropped; Word's own (`mso-…`) in one entry.
+    fn drop_style_property(&mut self, prop: &str) {
+        match prop.starts_with("mso-") {
+            true => self.summarise("dropped-style", "mso-*"),
+            false => self.summarise("dropped-style", prop),
         }
     }
 
@@ -655,6 +736,10 @@ impl Converter<'_> {
         self.in_link += 1;
         let out = self.kept(el, "a");
         self.in_link -= 1;
+        if matches!(out.as_slice(), [Node::Element(a)] if a.name == "a" && is_empty(&a.children)) {
+            self.summarise("dropped-element", "a without content");
+            return Vec::new();
+        }
         out
     }
 
@@ -766,6 +851,10 @@ impl Converter<'_> {
     }
 
     fn row(&mut self, tr: Element) -> Vec<Node> {
+        if style_of(&tr, "display").is_some_and(|d| d == "none") {
+            self.summarise("dropped-element", "tr hidden");
+            return Vec::new();
+        }
         self.drop_style(&tr);
         let attrs = self.attributes(&tr, "tr");
         let mut row = element("tr", attrs);
@@ -962,9 +1051,16 @@ fn link_targets(nodes: &[Node], out: &mut Vec<String>) {
 /// language, and the entries that are metadata of the content; every other
 /// entry is reported once per name.
 fn head(html: &str, report: &mut Vec<Entry>) -> Meta {
-    let (head, _) = lipupona::head::Head::from_document(&lipupona::html::parse_document(html));
+    let doc = lipupona::html::parse_document(html);
+    let (head, _) = lipupona::head::Head::from_document(&doc);
+    // Where `html` has none, the language of `body` (Word puts it there).
+    let body_lang = doc
+        .body_attrs
+        .iter()
+        .find(|a| a.name == "lang" && !a.value.is_empty())
+        .map(|a| a.value.clone());
     let mut meta = Meta {
-        lang: head.lang.filter(|l| !l.is_empty()),
+        lang: head.lang.filter(|l| !l.is_empty()).or(body_lang),
         ..Meta::default()
     };
     let mut dropped: Vec<(String, usize)> = Vec::new();
@@ -999,4 +1095,140 @@ fn head(html: &str, report: &mut Vec<Entry>) -> Meta {
         report.push(Entry::new("dropped-element", message));
     }
     meta
+}
+
+/// The list (`lfo<k>`) and level of a Word list paragraph
+/// (`mso-list:l0 level2 lfo1`).
+fn word_list(el: &Element) -> Option<(String, usize)> {
+    if el.name != "p" {
+        return None;
+    }
+    let value = style_of(el, "mso-list")?;
+    let mut lfo = None;
+    let mut level = None;
+    for word in value.split_whitespace() {
+        if let Some(n) = word.strip_prefix("level") {
+            level = n.parse::<usize>().ok().filter(|&n| n > 0);
+        } else if word.starts_with("lfo") {
+            lfo = Some(word.to_string());
+        }
+    }
+    Some((lfo?, level?))
+}
+
+/// Removes the marker of a Word list item (the span styled
+/// `mso-list:Ignore`, with the spans around it that hold nothing else) and
+/// returns its text without spaces.
+fn take_marker(nodes: &mut Vec<Node>) -> Option<String> {
+    for k in 0..nodes.len() {
+        let Node::Element(e) = &mut nodes[k] else {
+            continue;
+        };
+        if e.name == "span" && style_of(e, "mso-list").is_some_and(|v| v == "ignore") {
+            let marker = plain_text(&e.children);
+            nodes.remove(k);
+            return Some(marker.trim().to_string());
+        }
+        if let Some(marker) = take_marker(&mut e.children) {
+            // The spans around the marker go with it.
+            let empty = e.name == "span" && is_empty(&e.children);
+            if empty {
+                nodes.remove(k);
+            }
+            return Some(marker);
+        }
+    }
+    None
+}
+
+/// The kind of list a Word marker makes, and its number if it has one:
+/// digits (also with dots, `2.1`) give `ol` and the last number, a letter
+/// or a roman number `ol` without one, anything else `ul`.
+fn marker_kind(marker: &str) -> (&'static str, Option<u32>) {
+    let m = marker.trim_start_matches('(');
+    let m = m.strip_suffix(['.', ')']).unwrap_or(m);
+    if !m.is_empty() && m.chars().all(|c| c.is_ascii_digit() || c == '.') {
+        let last = m
+            .rsplit('.')
+            .find(|p| !p.is_empty())
+            .and_then(|p| p.parse().ok());
+        if last.is_some() {
+            return ("ol", last);
+        }
+    }
+    let roman = !m.is_empty() && m.chars().all(|c| "ivxlcdmIVXLCDM".contains(c));
+    let letter = m.chars().count() == 1 && m.chars().all(|c| c.is_alphabetic());
+    match roman || letter {
+        true => ("ol", None),
+        false => ("ul", None),
+    }
+}
+
+struct WordItem {
+    kind: &'static str,
+    number: u32,
+    li: Element,
+}
+
+/// A Word list being built: the lists open at each level, outermost first.
+struct WordList {
+    lfo: String,
+    open: Vec<(usize, Element)>,
+    out: Vec<Node>,
+}
+
+impl WordList {
+    fn new(lfo: String) -> Self {
+        WordList {
+            lfo,
+            open: Vec::new(),
+            out: Vec::new(),
+        }
+    }
+
+    fn push(&mut self, level: usize, item: WordItem) {
+        while self.open.last().is_some_and(|(l, _)| *l > level) {
+            self.close();
+        }
+        if self
+            .open
+            .last()
+            .is_some_and(|(l, list)| *l == level && list.name != item.kind)
+        {
+            self.close();
+        }
+        if self.open.last().is_none_or(|(l, _)| *l < level) {
+            let attrs = match item.kind == "ol" && item.number != 1 {
+                true => vec![attr("start", item.number.to_string())],
+                false => Vec::new(),
+            };
+            self.open.push((level, element(item.kind, attrs)));
+        }
+        let (_, list) = self.open.last_mut().expect("a list is open");
+        list.children.push(Node::Element(item.li));
+    }
+
+    /// Closes the innermost list, into the last item of the one around it.
+    fn close(&mut self) {
+        let Some((_, list)) = self.open.pop() else {
+            return;
+        };
+        match self
+            .open
+            .last_mut()
+            .and_then(|(_, outer)| match outer.children.last_mut() {
+                Some(Node::Element(li)) => Some(li),
+                _ => None,
+            }) {
+            Some(li) => li.children.push(Node::Element(list)),
+            None => self.out.push(Node::Element(list)),
+        }
+    }
+
+    fn finish(mut self) -> Vec<Node> {
+        while !self.open.is_empty() {
+            self.close();
+        }
+        self.out
+    }
 }

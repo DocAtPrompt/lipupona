@@ -1,0 +1,3 @@
+kind = "conversion"
+section = "3.2"
+note = "A Word list that goes on after a paragraph starts at its number; letters as markers make an ordered list, their numbering reported."

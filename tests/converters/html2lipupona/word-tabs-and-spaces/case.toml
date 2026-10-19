@@ -1,0 +1,3 @@
+kind = "conversion"
+section = "3.2"
+note = "A span of Word's tab or kept spaces is one space."

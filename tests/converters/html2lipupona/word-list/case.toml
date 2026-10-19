@@ -1,0 +1,3 @@
+kind = "conversion"
+section = "3.2"
+note = "Word's list paragraphs with the same lfo become one list nested by level, the marker deciding the kind."

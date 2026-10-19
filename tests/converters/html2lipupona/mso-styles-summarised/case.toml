@@ -1,0 +1,3 @@
+kind = "conversion"
+section = "3.2"
+note = "Styles beginning with mso- are reported in one entry."

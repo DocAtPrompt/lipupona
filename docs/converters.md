@@ -221,7 +221,7 @@ is a starting point to be adapted, not copied.
 
 | Mode | For | Strips |
 |---|---|---|
-| **export** | HTML written by an editor: Word, Google Docs, Notion, other wikis, static sites | only what is never content: `script`, `style`, `meta`, `link`, `noscript`, `template`, comments |
+| **export** | HTML written by an editor: Word, Google Docs, Notion, other wikis, static sites | only what is never content: `script`, `style`, `meta`, `link`, `noscript`, `noframes`, `template`, comments |
 | **article** | web pages to keep | everything of *export*, then §3.3 and §3.4 |
 
 ### 3.2 Mapping (both modes)
@@ -243,7 +243,7 @@ is a starting point to be adapted, not copied.
 | data table | `table` with `colspan`/`rowspan`; first row of `th` cells becomes `thead` | — |
 | `dl` | `dl` (in the profile since 2026-10-18, SPEC §5.6.1) | — |
 | `figure`, `figcaption`, `img` | kept | `image-not-local` |
-| `iframe`, `video`, `audio`, `embed`, `object` | a link to the source | `embed-as-link` |
+| `iframe`, `frame`, `video`, `audio`, `embed`, `object` | a link to the source | `embed-as-link` |
 | `form` and its controls | dropped | `dropped-element` |
 | runs of `br` | paragraphs | — |
 | entities | decoded; written per C4 | — |
@@ -281,6 +281,36 @@ choice:
   `dropped-element`.
 - **Text** directly in `body` or in an unwrapped container becomes a
   paragraph; runs of two or more `br` split paragraphs.
+- **Word and Excel** (2026-10-19, tried on real exports of both):
+  - *Lists.* Word writes a list as paragraphs whose style holds
+    `mso-list:l… level<n> lfo<k>`, each starting with its marker in a span
+    styled `mso-list:Ignore` (`1.`, `·`). Such paragraphs that follow one
+    another with the same `lfo<k>` are one list — paragraphs left out as
+    empty between them do not end it —, nested by their level. The marker
+    decides the kind and is dropped, with the spans around it that hold
+    nothing else: digits, also with dots (`1.`, `2.1`,
+    `(3)`), make an `ol`, with `start` when its first item is not 1;
+    a letter or a roman number (`a)`, `iv.`) makes an `ol` too, its
+    numbering reported as `dropped-style`; any other marker makes a `ul`.
+    A paragraph of another kind ends the list; a list that goes on after
+    it is a new one, with its `start`. A run of two or more `br` in an
+    item gives paragraphs after its lead.
+  - *Title.* A paragraph of Word's style *Title* (`class="MsoTitle"`) is an
+    `h1`; *Subtitle* stays a paragraph. These are the only classes read.
+  - *Spaces.* A span styled `mso-tab-count` or `mso-spacerun` (a tab, or
+    spaces Word keeps) is one space.
+  - `o:p`, Word's paragraph mark, is removed without a report.
+  - Styles beginning with `mso-` are reported in one entry,
+    `dropped-style`, `mso-* (n)`; `mso-list`, `mso-tab-count` and
+    `mso-spacerun` are read, not dropped.
+- **Empty cells.** A cell whose content is only whitespace, no-break spaces
+  included, is empty (Excel writes `&nbsp;` into every empty cell).
+- **Frames.** A `frame` is a link to its source, as an `iframe`:
+  `embed-as-link`. `noframes` is never content.
+- **Hidden elements.** An element styled `display: none`, a table row
+  included, is left out: `dropped-element`.
+- **Links without content** — no text, no image — are left out:
+  `dropped-element`.
 - **Lists deeper than the profile** are flattened as in md2lipupona (§2):
   `list-depth-reduced`.
 - **Paragraphs in items and cells.** The first paragraph of a list item or
@@ -306,10 +336,12 @@ choice:
   unwrapped: `dropped-element`. CommonMark cuts an HTML block at a blank
   line, so a table typed in Markdown with blank lines arrives in pieces. A
   table without any cell is dropped.
-- **Never content** (`script`, `style`, `meta`, `link`, `noscript`,
+- **Never content** (`script`, `style`, `meta`, `link`, `noscript`, `noframes`,
   `template`, comments, the head) is removed without a report.
 - **The head**: `title`, the `lang` of `html` and the page's metadata are
-  returned as values, read as SPEC §3.7 reads a head. Of the entries
+  returned as values, read as SPEC §3.7 reads a head. Where `html` has no
+  `lang`, that of `body` is taken, as written (Word puts it there,
+  2026-10-19). Of the entries
   `<meta name content>` only metadata of the content is kept
   (2026-10-18): `description`, `author`, `keywords` — split at commas into
   one entry per keyword — and the names beginning with `dcterms.` or
