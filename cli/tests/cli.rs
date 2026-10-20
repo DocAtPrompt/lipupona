@@ -172,6 +172,7 @@ fn usage_errors_exit_with_2() {
         &["from-md", "--article"],
         &["from-html", "--vault", "."],
         &["from-md", "--vault", "."],
+        &["canon", "--name", "Konsona"],
         &["html", "a", "b"],
         &["check", "-o", "x"],
         &["from-md", "--flavour", "wiki"],
@@ -255,4 +256,19 @@ fn a_file_finds_its_links_in_a_vault() {
     assert!(outside.stderr.contains("does not lie in the vault"));
     let folder = run(&["from-md", "--vault", v, v, "-o", "x"], "");
     assert_eq!(folder.code, 2);
+}
+
+#[test]
+fn name_makes_the_islands_of_an_implementation_its_own() {
+    let island = "<svg data-konsona-rendered=\"mermaid\" viewBox=\"0 0 10 10\"></svg>\n";
+    let page = scratch("insel.html");
+    std::fs::write(&page, island).unwrap();
+    let p = page.to_str().unwrap();
+    assert_eq!(run(&["check", "--name", "konsona", p], "").code, 0);
+    assert_eq!(run(&["check", p], "").code, 1);
+    let out = run(&["canon", "--name", "konsona"], island);
+    assert_eq!(
+        (out.code, out.stdout.as_str(), out.stderr.as_str()),
+        (0, island, "")
+    );
 }

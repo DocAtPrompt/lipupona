@@ -30,7 +30,7 @@ pub fn read_document(input: &str, profile: &Profile) -> (Head, Vec<Node>, Vec<Di
     let doc = html::parse_document(input);
     let (head, mut diagnostics) = Head::from_document(&doc);
     report_comments(&doc.nodes, &mut diagnostics);
-    let mut nodes = profile.check(input, doc.nodes, &mut diagnostics);
+    let mut nodes = profile.check_blocks(input, doc.nodes, &mut diagnostics);
     normalize(&mut nodes, profile);
     (head, nodes, diagnostics)
 }
@@ -41,7 +41,7 @@ pub fn read(input: &str, profile: &Profile) -> (Vec<Node>, Vec<Diagnostic>) {
     let nodes = html::parse(input);
     let mut diagnostics = Vec::new();
     report_comments(&nodes, &mut diagnostics);
-    let mut nodes = profile.check(input, nodes, &mut diagnostics);
+    let mut nodes = profile.check_blocks(input, nodes, &mut diagnostics);
     normalize(&mut nodes, profile);
     (nodes, diagnostics)
 }

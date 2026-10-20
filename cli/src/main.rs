@@ -9,6 +9,7 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use lipupona::Profile;
 use lipupona::head::{Head, HeadItem};
 use md2lipupona::Flavour;
 
@@ -34,6 +35,8 @@ options:
   --definition-lists    from-md: read `Term` / `: definition` as a list
   --vault <folder>      from-md on a file: find wikilink targets among the
                         files of <folder>, which holds the file
+  --name <name>         the implementation whose `data-<name>-*` are its own
+                        (islands `data-<name>-rendered`); default lipupona
   --article             from-html: a web page to keep; navigation, sidebars,
                         comments and the like are stripped and reported
   --document            from-md, from-html: write a whole document, its head
@@ -99,6 +102,7 @@ struct Args {
     article: bool,
     document: bool,
     vault: Option<String>,
+    name: String,
 }
 
 #[derive(Debug)]
@@ -148,6 +152,7 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
         article: false,
         document: false,
         vault: None,
+        name: lipupona::IMPLEMENTATION.to_string(),
     };
     let mut only_files = false;
     while let Some(arg) = it.next() {
@@ -168,6 +173,16 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
             "-h" | "--help" if inline.is_none() => return Ok(Parsed::Help),
             "-o" | "--output" => parsed.output = Some(value()?),
             "--vault" => parsed.vault = Some(value()?),
+            "--name" => {
+                let name = value()?;
+                let mut chars = name.chars();
+                if !(chars.next().is_some_and(|c| c.is_ascii_lowercase())
+                    && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()))
+                {
+                    return Err(format!("`--name` takes a-z and 0-9, not `{name}`"));
+                }
+                parsed.name = name;
+            }
             "--flavour" => {
                 parsed.flavour = Some(match value()?.as_str() {
                     "commonmark" => Flavour::CommonMark,
@@ -212,7 +227,7 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
 
 fn run(args: &Args) -> ExitCode {
     if args.command == Command::Check {
-        return check(&args.files);
+        return check(&args.files, &Profile::reference(&args.name));
     }
     let path = args.files.first().map(String::as_str).unwrap_or("-");
     if path != "-" && Path::new(path).is_dir() {
@@ -397,6 +412,7 @@ fn convert(
             .map(|e| format!("{}: {}", e.code, e.message))
             .collect()
     };
+    let profile = Profile::reference(&args.name);
     // A file's name is the title of a page that has none, as in Obsidian.
     let stem = || {
         (path != "-")
@@ -408,15 +424,15 @@ fn convert(
         if !head.items.iter().any(|i| matches!(i, HeadItem::Title(_))) {
             head.items.splice(0..0, stem().map(HeadItem::Title));
         }
-        lipupona::document(&head, body).text
+        profile.document(&head, body).text
     };
     match args.command {
-        Command::Canon => core(lipupona::canon(src)),
-        Command::Display => core(lipupona::display(src)),
-        Command::Html => core(lipupona::html(src)),
+        Command::Canon => core(profile.canon(src)),
+        Command::Display => core(profile.display(src)),
+        Command::Html => core(profile.html(src)),
         Command::Spans => {
             let mut out = String::new();
-            for span in lipupona::spans(src) {
+            for span in profile.spans(src) {
                 let kind = format!("{:?}", span.kind).to_lowercase();
                 let text = src.get(span.range.clone()).unwrap_or("");
                 out.push_str(&format!(
@@ -459,7 +475,7 @@ fn convert(
 
 /// Prints what keeps each file from being stored as it is: not canonical,
 /// or blocks outside the profile. Exit status 1 if anything was found.
-fn check(files: &[String]) -> ExitCode {
+fn check(files: &[String], profile: &Profile) -> ExitCode {
     let (mut found, mut failed) = (false, false);
     let mut paths = Vec::new();
     for path in files {
@@ -493,7 +509,7 @@ fn check(files: &[String]) -> ExitCode {
                 continue;
             }
         };
-        let out = lipupona::canon(&src);
+        let out = profile.canon(&src);
         let mut findings = Vec::new();
         if out.text != src {
             findings.push("not canonical".to_string());

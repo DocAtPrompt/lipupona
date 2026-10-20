@@ -684,7 +684,7 @@ impl<'p> Reader<'p> {
         let content = lines[i + 1..end].join("\n");
         if info == "{=html}" || info == "=html" {
             let nodes = html::parse(&content);
-            let nodes = self.profile.check(&content, nodes, &mut self.diags);
+            let nodes = self.profile.check_blocks(&content, nodes, &mut self.diags);
             let nodes: Vec<Node> = nodes.into_iter().filter(|n| !n.is_blank_text()).collect();
             let src = self.joined(&lines[i + 1..end]);
             let starts: Vec<usize> = src.text.char_indices().map(|(b, _)| b).collect();

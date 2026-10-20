@@ -251,7 +251,7 @@ impl Profile {
     /// Checks the children of `body`. Every top-level block that breaks the
     /// profile becomes a verbatim copy of its source (§3.3, §3.4); islands
     /// become verbatim wherever they stand (§3.6).
-    pub(crate) fn check(
+    pub(crate) fn check_blocks(
         &self,
         src: &str,
         nodes: Vec<Node>,
