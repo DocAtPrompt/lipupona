@@ -10,8 +10,9 @@ case names another.
 ## The head
 
 The head is the same in every profile (SPEC §3.7): `lang` on `html`,
-`<meta charset="utf-8">`, at most one `title`, and entries
-`<meta name="…" content="…">`.
+`<meta charset="utf-8">`, at most one `title`, entries
+`<meta name="…" content="…">`, and stylesheets: `<style>` and
+`<link rel="stylesheet">` with a relative `href`.
 
 ## Elements
 
@@ -80,7 +81,7 @@ with these restrictions:
 | `start` | only on `ol`; omitted when 1 — canonicalisation removes `start="1"` |
 | `href` `src` | percent-encoded (C12); `src` never absolute: no scheme, no leading `/` |
 
-Never allowed: `style`, event attributes (`on…`), `contenteditable`, `tabindex`.
+Never allowed in the body: the attribute `style`, event attributes (`on…`), `contenteditable`, `tabindex`.
 
 Reserved per implementation: `data-<name>-*` (§11). konsona uses
 `data-konsona-*`; the test suite uses `data-test-*`. Such attributes of

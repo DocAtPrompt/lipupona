@@ -1,0 +1,4 @@
+kind = "canonical"
+section = "4"
+note = "A style in the head is kept as stored, its line ends LF, and not reported."
+raw = true

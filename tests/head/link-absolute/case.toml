@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "3.7"
+note = "A link to a stylesheet on another host or root-relative is outside the profile and kept as stored."

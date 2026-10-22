@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "4"
+note = "A type naming text/css is dropped from a stylesheet, in any case."

@@ -7,6 +7,7 @@
 //! notation (§5.14).
 
 pub mod canon;
+mod css;
 pub mod diag;
 pub mod dom;
 pub mod head;

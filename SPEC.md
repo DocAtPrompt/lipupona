@@ -243,8 +243,28 @@ The head is the same in every profile. A document's head holds:
   run of entries of the same name, in order, as `citation_author` is
   written. An implementation's own entries (`konsona:schema`) are entries
   like any other.
+- **stylesheets**, in any number, where P4 puts appearance:
+  - `<style>` holding CSS;
+  - `<link rel="stylesheet" href="…">`, its `rel` exactly `stylesheet` in
+    any ASCII case, its `href` never absolute, as `src` is (Appendix A): no
+    scheme, no leading `/`.
 
-Anything else in the head — `script`, `style`, `link`, `base`, a `meta` with
+  Neither has an attribute other than `media`, a `type` naming `text/css`,
+  and `data-<name>-*` (§11). Their order is their cascade order and is
+  kept.
+
+  lipupona does not read CSS, and does not open a linked stylesheet. It
+  looks into a `style` only for references to another host: the URL of an
+  `@import` — a string or `url(…)` — and of every other `url(…)`, outside
+  comments `/* … */` and outside other strings. A URL refers to another
+  host when it begins with `//` or has a scheme (C12) other than `data:`.
+  Such a stylesheet stays in the profile and is kept; the reference is
+  reported (`external-reference`, §9.3), since a browser opening the file
+  loads it.
+
+Anything else in the head — `script`, a `style` or `link` other than the
+stylesheets above (`rel="icon"`, `rel="alternate stylesheet"`, an absolute
+`href`), `base`, a `meta` with
 other attributes (`property`, `http-equiv`), a `meta` whose name or value
 does not fit the rule above, a second `title`, comments —,
 any attribute of `html` other than `lang`, any attribute of `head` or `body`,
@@ -257,7 +277,7 @@ L5, L6).
 ## 4 · Canonical serialization
 
 A canonical document has exactly one byte sequence. C1–C14 apply to the
-body; C15–C17 add the document around it.
+body; C15–C18 add the document around it.
 
 *File and characters*
 
@@ -363,6 +383,12 @@ case). Canonicalisation keeps the form it reads.
   line ends; a comment outside `html` is written at the end of the head.
   What in it is not closed — a comment without `-->`, an element without its
   end tag — is closed, so that it cannot take in the rest of the document.
+- **C18** A stylesheet (§3.7) is written on a line of its own: `<style`, its
+  attributes ordered by C11, `>`, the CSS as stored with LF line ends,
+  `</style>`; or `<link`, its attributes ordered by C11 — `href` by C12,
+  `rel="stylesheet"` in lower case — and `>`. Attribute values follow
+  C3–C5. A `type` naming `text/css`, in any ASCII case, is dropped. A
+  `style` without its end tag is closed, as in C17.
 
 ---
 
@@ -908,8 +934,8 @@ line**:
 - an **entry** `key: value`, or `key:` with list items on the lines below
   it;
 - a **list item**: indentation, `- `, a value;
-- a line beginning with `<`: head content outside the profile, as it is
-  stored (C17). An element whose start tag begins the line and whose end tag
+- a line beginning with `<`: a stylesheet (§3.7) or head content outside
+  the profile, as it is stored (C17, C18). An element whose start tag begins the line and whose end tag
   is not on it goes on to the line that holds its end tag (a `script` over
   several lines), a comment to its `-->`.
 
@@ -969,8 +995,8 @@ created: 2026-10-18
   `<body class="druck">`.
 - **The display** writes `lang` first, then the children of the head in
   their order — the title as `title: …`, a run of entries of one name as one
-  key (`key: value`, or `key: [a, b]` for two or more), content outside the
-  profile as stored —, then the `html`, `head` and `body` lines. A value is
+  key (`key: value`, or `key: [a, b]` for two or more), stylesheets and
+  content outside the profile as stored —, then the `html`, `head` and `body` lines. A value is
   quoted, with `"`, only when it would not read back as plain: when it is
   empty, begins or ends with a space, begins with one of `"` `'` `[` `]`
   `{` `}` `-` `#` `&` `*` `!` `|` `>` `%` `@` or a backtick, or holds `: `
@@ -1279,6 +1305,7 @@ Implementations report by stable codes. This version defines:
 | `attribute-conflict` | braces and element line disagree on an attribute |
 | `comment` | a comment is present (not indexed, not exported as text) |
 | `unclosed-comment` | a comment is never closed |
+| `external-reference` | a stylesheet in the head refers to another host (§3.7); kept, and still in the profile |
 
 Implementations MAY add codes with a prefix of their own.
 
@@ -1307,7 +1334,7 @@ change.
 - Attributes `data-<name>-*` of another implementation are kept, ordered by
   C11, and not reported: they mean nothing to this implementation and change
   nothing in the document. They are valid on every body element of every
-  profile.
+  profile and on stylesheets in the head (§3.7).
 - An implementation MAY store content as a recipe — a query, a template —
   that is assembled when the document is viewed. Such a document is not
   complete without the implementation (an exception to P5) and MUST be marked

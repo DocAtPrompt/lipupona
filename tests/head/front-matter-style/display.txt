@@ -1,0 +1,9 @@
+---
+title: Eisenmangel
+<link href="../_global.css" rel="stylesheet">
+<style>
+h1 { color: #333; }
+</style>
+---
+
+# Eisenmangel

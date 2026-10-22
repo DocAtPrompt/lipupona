@@ -16,6 +16,7 @@ pub enum Code {
     UnclosedComment,
     IslandRejected,
     AlignmentDropped,
+    ExternalReference,
 }
 
 impl Code {
@@ -33,6 +34,7 @@ impl Code {
             Code::UnclosedComment => "unclosed-comment",
             Code::IslandRejected => "island-rejected",
             Code::AlignmentDropped => "alignment-dropped",
+            Code::ExternalReference => "external-reference",
         }
     }
 

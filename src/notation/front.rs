@@ -256,8 +256,8 @@ pub(crate) fn write(head: &Head) -> String {
     while k < head.items.len() {
         match &head.items[k] {
             HeadItem::Title(t) => out.push_str(&format!("title: {}\n", quote(t, false))),
-            HeadItem::Foreign(s) => {
-                out.push_str(s);
+            item @ (HeadItem::Foreign(_) | HeadItem::Style { .. } | HeadItem::Link { .. }) => {
+                out.push_str(&item.html());
                 out.push('\n');
             }
             HeadItem::Entry { name, .. } => {

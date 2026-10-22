@@ -1,5 +1,5 @@
 //! The head of a document (SPEC §3.7) and the document around the body
-//! (C15–C17).
+//! (C15–C18).
 
 use unicode_normalization::UnicodeNormalization;
 
@@ -7,6 +7,7 @@ use crate::canon::{escape_attr, escape_text, normalize_attrs, start_tag};
 use crate::diag::{Code, Diagnostic};
 use crate::dom::{Attr, Element, is_html_space};
 use crate::html::Document;
+use crate::{css, url};
 
 /// A document's head: its language, the children of `head` in order, and
 /// the attributes outside the profile on `html`, `head` and `body`.
@@ -28,8 +29,87 @@ pub enum HeadItem {
         name: String,
         value: String,
     },
+    /// A stylesheet: `<style>`, its attributes and its CSS as stored (C18).
+    Style {
+        attrs: Vec<Attr>,
+        css: String,
+    },
+    /// A stylesheet: `<link rel="stylesheet">` and its attributes (C18).
+    Link {
+        attrs: Vec<Attr>,
+    },
     /// Head content outside the profile, as stored (C17).
     Foreign(String),
+}
+
+impl HeadItem {
+    /// The item as C16–C18 write it, without the line feed after it.
+    pub fn html(&self) -> String {
+        let mut out = String::new();
+        match self {
+            HeadItem::Title(t) => {
+                out.push_str("<title>");
+                escape_text(t, &mut out);
+                out.push_str("</title>");
+            }
+            HeadItem::Entry { name, value } => {
+                out.push_str("<meta name=\"");
+                escape_attr(name, &mut out);
+                out.push_str("\" content=\"");
+                escape_attr(value, &mut out);
+                out.push_str("\">");
+            }
+            HeadItem::Style { attrs, css } => {
+                out.push_str(&tag("style", attrs));
+                out.push_str(css);
+                out.push_str("</style>");
+            }
+            HeadItem::Link { attrs } => out.push_str(&tag("link", attrs)),
+            HeadItem::Foreign(s) => out.push_str(s),
+        }
+        out
+    }
+}
+
+/// A start tag with its attributes in canonical form (C11, C12).
+fn tag(name: &str, attrs: &[Attr]) -> String {
+    let mut el = Element {
+        name: name.to_string(),
+        attrs: attrs.to_vec(),
+        children: Vec::new(),
+        span: 0..0,
+        implied_end: false,
+    };
+    normalize_attrs(&mut el);
+    start_tag(&el)
+}
+
+/// The attributes of a stylesheet (§3.7), with a `type` naming `text/css`
+/// dropped and `rel` in lower case; None when it has an attribute that a
+/// stylesheet may not have, or is a `link` that is not one.
+fn stylesheet(attrs: &[Attr], link: bool) -> Option<Vec<Attr>> {
+    let mut out = Vec::new();
+    let (mut rel, mut href) = (false, false);
+    for a in attrs {
+        match a.name.as_str() {
+            "media" => out.push(a.clone()),
+            "type" if a.value.eq_ignore_ascii_case("text/css") => {}
+            n if n.starts_with("data-") => out.push(a.clone()),
+            "rel" if link && a.value.eq_ignore_ascii_case("stylesheet") => {
+                rel = true;
+                out.push(Attr {
+                    name: "rel".into(),
+                    value: "stylesheet".into(),
+                });
+            }
+            "href" if link && !url::is_absolute(&a.value) => {
+                href = true;
+                out.push(a.clone());
+            }
+            _ => return None,
+        }
+    }
+    (!link || (rel && href)).then_some(out)
 }
 
 /// Whether HTML is a whole document (§4): after a byte order mark and
@@ -94,6 +174,27 @@ impl Head {
                 Some((name, attrs)) => (name.as_str(), attrs.as_slice()),
                 None => ("", &[][..]),
             };
+            let sheet = match name {
+                "style" => stylesheet(attrs, false).map(|attrs| HeadItem::Style {
+                    attrs,
+                    css: part.text.clone(),
+                }),
+                "link" => stylesheet(attrs, true).map(|attrs| HeadItem::Link { attrs }),
+                _ => None,
+            };
+            if let Some(sheet) = sheet {
+                if let HeadItem::Style { css, .. } = &sheet {
+                    for u in css::external_references(css) {
+                        let shown: String = u.chars().take(60).collect();
+                        diags.push(Diagnostic::new(
+                            Code::ExternalReference,
+                            format!("{shown} in a stylesheet"),
+                        ));
+                    }
+                }
+                head.items.push(sheet);
+                continue;
+            }
             let item = match name {
                 "title" if !titled => {
                     titled = true;
@@ -143,17 +244,6 @@ impl Head {
 
     /// The document around `body`, the body's canonical serialization (C15).
     pub fn serialize(&self, body: &str) -> String {
-        let tag = |name: &str, attrs: &[Attr]| {
-            let mut el = Element {
-                name: name.to_string(),
-                attrs: attrs.to_vec(),
-                children: Vec::new(),
-                span: 0..0,
-                implied_end: false,
-            };
-            normalize_attrs(&mut el);
-            start_tag(&el)
-        };
         let mut html_attrs = self.html_attrs.clone();
         if let Some(lang) = &self.lang {
             html_attrs.push(Attr {
@@ -167,21 +257,7 @@ impl Head {
         out.push_str(&tag("head", &self.head_attrs));
         out.push_str("\n<meta charset=\"utf-8\">\n");
         for item in &self.items {
-            match item {
-                HeadItem::Title(t) => {
-                    out.push_str("<title>");
-                    escape_text(t, &mut out);
-                    out.push_str("</title>");
-                }
-                HeadItem::Entry { name, value } => {
-                    out.push_str("<meta name=\"");
-                    escape_attr(name, &mut out);
-                    out.push_str("\" content=\"");
-                    escape_attr(value, &mut out);
-                    out.push_str("\">");
-                }
-                HeadItem::Foreign(s) => out.push_str(s),
-            }
+            out.push_str(&item.html());
             out.push('\n');
         }
         out.push_str("</head>\n");

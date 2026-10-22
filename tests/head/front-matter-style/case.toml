@@ -1,0 +1,3 @@
+kind = "roundtrip"
+section = "5.15"
+note = "Stylesheets are lines beginning with < in the front matter, a style over several lines up to its end tag."

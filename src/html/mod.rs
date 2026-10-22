@@ -48,7 +48,8 @@ pub struct Document {
 }
 
 /// A child of the head: its source (LF line ends), and for an element its
-/// name, its attributes and, for `title`, its decoded text.
+/// name, its attributes and, for `title`, its decoded text, for `style` its
+/// CSS as it stands.
 #[derive(Debug, Clone, PartialEq)]
 pub struct HeadPart {
     pub source: String,
@@ -909,8 +910,10 @@ impl<'a> Parser<'a> {
             let found = find_end_tag(rest, name);
             unclosed = found.is_none();
             let close = found.unwrap_or(rest.len());
-            if name == "title" {
-                text = decode(&rest[..close], false);
+            match name {
+                "title" => text = decode(&rest[..close], false),
+                "style" => text = rest[..close].to_string(),
+                _ => {}
             }
             let after = rest[close..]
                 .find('>')

@@ -1,6 +1,6 @@
 ---
 title: Eisenmangel
-<link rel="stylesheet" href="praxis.css">
+<link rel="icon" href="praxis.ico">
 <body class="druck">
 ---
 

@@ -73,7 +73,7 @@ the content is not checked.
   convert line ends under `tests/` (`.gitattributes`).
 - `expected.html` contains `body` content only, no `body` tag — except in
   a case about the head (area `head`), where input and expectation are
-  whole documents (SPEC §3.7, C15–C17, §5.15).
+  whole documents (SPEC §3.7, C15–C18, §5.15).
 - `case.toml` keys: `kind`, `profile` (default `reference`), `section`
   (e.g. `"5.5.2"`; for a converter case the section of `docs/converters.md`),
   `note` (one sentence: what the case is about), `raw` (default `false`),

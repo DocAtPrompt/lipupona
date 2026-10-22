@@ -1,0 +1,3 @@
+kind = "canonical"
+section = "3.7"
+note = "A style with another attribute is outside the profile and kept as stored."
