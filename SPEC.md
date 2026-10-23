@@ -935,9 +935,11 @@ line**:
   it;
 - a **list item**: indentation, `- `, a value;
 - a line beginning with `<`: a stylesheet (§3.7) or head content outside
-  the profile, as it is stored (C17, C18). An element whose start tag begins the line and whose end tag
-  is not on it goes on to the line that holds its end tag (a `script` over
-  several lines), a comment to its `-->`.
+  the profile, as it is stored (C17, C18). An element whose start tag
+  begins the line goes on to the line that ends it: a void element (`link`,
+  `meta`) to the line that ends its start tag, any other to the line that
+  holds its end tag (a `script` over several lines); a comment goes on to
+  its `-->`. Blank lines on the way belong to it.
 
 If a line in between is none of these, or no line `---` follows, there is no
 front matter: the first line is an `hr` (§5.2) and the text is a

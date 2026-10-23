@@ -33,6 +33,20 @@ pub(crate) fn read<'a>(lines: &[&'a str]) -> Option<Front<'a>> {
         diags: Vec::new(),
         values: Vec::new(),
     };
+    // The lines between the fences as one text, with the offset of each
+    // line, so that head content may run over lines (a start tag too).
+    let text = lines[..close].join("\n");
+    let mut starts = Vec::with_capacity(close + 1);
+    let mut at = 0;
+    for line in &lines[..close] {
+        starts.push(at);
+        at += line.len() + 1;
+    }
+    starts.push(text.len() + 1);
+    let within = Within {
+        text: &text,
+        starts: &starts,
+    };
     // The key whose list items follow, and whether it took any.
     let mut list: Option<String> = None;
     let mut i = 1;
@@ -44,7 +58,7 @@ pub(crate) fn read<'a>(lines: &[&'a str]) -> Option<Front<'a>> {
         }
         if line.starts_with('<') {
             list = None;
-            i = foreign(lines, i, close, &mut front.head)?;
+            i = foreign(lines, i, &within, &mut front.head)?;
             continue;
         }
         let rest = line.trim_start_matches(SP);
@@ -203,21 +217,38 @@ fn flow_list(s: &str) -> Option<Vec<(String, &str)>> {
     Some(items)
 }
 
-/// Head content outside the profile at `lines[i]`, which begins with `<`:
-/// an `html`, `head` or `body` start tag gives attributes; anything else is
-/// taken as stored, over the lines up to its end. The index after it, or
-/// None when it does not end before the closing `---`.
-fn foreign(lines: &[&str], i: usize, close: usize, head: &mut Head) -> Option<usize> {
+/// The lines of a front matter before its closing fence as one text, and
+/// where each line begins in it (one more for the end).
+struct Within<'t> {
+    text: &'t str,
+    starts: &'t [usize],
+}
+
+impl Within<'_> {
+    /// The line that holds byte `at` of the text.
+    fn line_of(&self, at: usize) -> usize {
+        self.starts.partition_point(|&s| s <= at) - 1
+    }
+}
+
+/// Head content at `lines[i]`, which begins with `<`: an `html`, `head` or
+/// `body` start tag gives attributes; anything else — a stylesheet, or
+/// content outside the profile — is taken as stored, over the lines up to
+/// its end: the end of its start tag for a void element, else its end tag.
+/// The index after it, or None when it does not end before the closing
+/// `---`.
+fn foreign(lines: &[&str], i: usize, within: &Within, head: &mut Head) -> Option<usize> {
+    let from = within.starts[i];
+    let rest = &within.text[from..];
     let line = lines[i];
     if line.starts_with("<!--") {
-        let j = (i..close).find(|&j| {
-            let from = if j == i { 4 } else { 0 };
-            lines[j].get(from..).is_some_and(|l| l.contains("-->"))
-        })?;
+        let end = rest[4..].find("-->")? + 4 + 3;
+        let j = within.line_of(from + end - 1);
         head.items.push(HeadItem::Foreign(lines[i..=j].join("\n")));
         return Some(j + 1);
     }
-    let (name, attrs, len) = html::start_tag_at(line)?;
+    let (name, attrs, len) = html::start_tag_at(rest)?;
+    let tag_end = within.line_of(from + len - 1);
     let set: Option<&mut Vec<Attr>> = match name.as_str() {
         "html" => Some(&mut head.html_attrs),
         "head" => Some(&mut head.head_attrs),
@@ -225,7 +256,8 @@ fn foreign(lines: &[&str], i: usize, close: usize, head: &mut Head) -> Option<us
         _ => None,
     };
     if let Some(set) = set {
-        if !line[len..].trim_matches(SP).is_empty() {
+        let after = &lines[tag_end][from + len - within.starts[tag_end]..];
+        if !after.trim_matches(SP).is_empty() {
             return None;
         }
         for a in attrs {
@@ -235,12 +267,14 @@ fn foreign(lines: &[&str], i: usize, close: usize, head: &mut Head) -> Option<us
                 set.push(a);
             }
         }
-        return Some(i + 1);
+        return Some(tag_end + 1);
     }
-    let j = if html::is_void(&name) || html::end_tag_in(&line[len..], &name).is_some() {
-        i
-    } else {
-        (i + 1..close).find(|&j| html::end_tag_in(lines[j], &name).is_some())?
+    let j = match html::is_void(&name) {
+        true => tag_end,
+        false => {
+            let end = html::end_tag_in(&rest[len..], &name)?;
+            within.line_of(from + len + end)
+        }
     };
     head.items.push(HeadItem::Foreign(lines[i..=j].join("\n")));
     Some(j + 1)
