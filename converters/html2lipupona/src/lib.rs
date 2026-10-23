@@ -703,7 +703,7 @@ impl Converter<'_> {
         }
         if is_absolute(&src) {
             self.report("image-not-local", src.clone());
-            if self.in_link > 0 {
+            if self.in_link > 0 || !self.profile.allows_href(&src) {
                 return text_unless_empty(alt);
             }
             let mut a = element("a", vec![attr("href", src)]);
@@ -725,12 +725,9 @@ impl Converter<'_> {
         let Some(href) = href else {
             return self.flow(el.children);
         };
-        if href
-            .trim_start()
-            .to_ascii_lowercase()
-            .starts_with("javascript:")
-        {
-            self.summarise("dropped-attribute", "href");
+        // A scheme the profile does not allow (`javascript:`, `irc:`).
+        if !self.profile.allows_href(href.trim()) {
+            self.report("dropped-attribute", format!("href {href}"));
             return self.flow(el.children);
         }
         self.in_link += 1;
@@ -758,6 +755,10 @@ impl Converter<'_> {
             self.summarise("dropped-element", &el.name);
             return Vec::new();
         };
+        if !self.profile.allows_href(&src) {
+            self.summarise("dropped-element", &el.name);
+            return Vec::new();
+        }
         self.report("embed-as-link", format!("<{}> {src}", el.name));
         let label = el.attr("title").map_or_else(|| src.clone(), str::to_string);
         let mut a = element("a", vec![attr("href", src)]);

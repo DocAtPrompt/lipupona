@@ -202,6 +202,8 @@ enum Origin {
     /// The alias of an embed: its target, its source as written, and
     /// whether an alias was given.
     Embed(String, String, bool),
+    /// A link whose `href` the profile does not allow: its text stays.
+    Unwrapped,
 }
 
 struct Frame {
@@ -315,6 +317,11 @@ impl<'a> Builder<'a> {
             Origin::Image(src, title) => self.image(frame.el, src, title),
             Origin::Wiki(target, written) => self.wikilink(frame.el, &target, written),
             Origin::Embed(target, written, alias) => self.embed(frame.el, &target, written, alias),
+            Origin::Unwrapped => {
+                for child in frame.el.children {
+                    self.push(child);
+                }
+            }
             Origin::Markdown
                 if frame.el.name == "blockquote" && self.flavour == Flavour::Obsidian =>
             {
@@ -456,7 +463,7 @@ impl<'a> Builder<'a> {
             return;
         }
         self.report("image-not-local", src.clone());
-        if self.in_link() {
+        if self.in_link() || !self.profile.allows_href(&src) {
             self.push(text(alt));
         } else {
             let mut a = element("a", vec![attr("href", src)]);
@@ -617,6 +624,11 @@ impl<'a> Builder<'a> {
                     LinkType::Email => format!("mailto:{dest_url}"),
                     _ => dest_url.to_string(),
                 };
+                if !self.profile.allows_href(&href) {
+                    self.report("dropped-attribute", format!("href {href}"));
+                    self.open_with(element("span", Vec::new()), Origin::Unwrapped);
+                    return;
+                }
                 if !title.is_empty() {
                     self.report("dropped-attribute", format!("title \"{title}\" of a link"));
                 }

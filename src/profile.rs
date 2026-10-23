@@ -94,6 +94,12 @@ impl Profile {
         self.list_depth
     }
 
+    /// Whether `href` may stand in the profile: relative, a fragment, or
+    /// with the scheme `http`, `https`, `mailto` or `tel` (Appendix A).
+    pub fn allows_href(&self, href: &str) -> bool {
+        url::is_allowed_href(href)
+    }
+
     /// The level of the deepest heading, 4 for `h4`.
     pub fn deepest_heading(&self) -> usize {
         (1..=6)
@@ -493,8 +499,9 @@ impl Profile {
         for a in &el.attrs {
             let ok = match a.name.as_str() {
                 n if n.starts_with("data-") => true,
-                "class" | "lang" | "href" | "alt" | "width" | "height" | "colspan" | "rowspan"
+                "class" | "lang" | "alt" | "width" | "height" | "colspan" | "rowspan"
                 | "datetime" => true,
+                "href" => url::is_allowed_href(&a.value),
                 "id" => kind == Kind::Block,
                 "src" => !url::is_absolute(&a.value),
                 "start" => el.name == "ol",

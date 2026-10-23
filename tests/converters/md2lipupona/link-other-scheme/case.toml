@@ -1,0 +1,3 @@
+kind = "conversion"
+section = "2"
+note = "A link with a scheme the profile does not allow is unwrapped, its text kept."

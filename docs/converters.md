@@ -101,6 +101,11 @@ above leaves a choice:
   becomes a link to that source with the alt text as its text:
   `image-not-local`. Inside a link, only the alt text is kept, since links
   do not nest. Downloading the image stays the caller's decision.
+- **Links with a scheme the profile does not allow** (2026-10-23) — other
+  than `http`, `https`, `mailto` and `tel`: an autolink `<irc://…>`,
+  `[Eisen](obsidian://…)` — are unwrapped, their text kept, as
+  html2lipupona does: `dropped-attribute` with the address. An image whose
+  absolute source has such a scheme keeps only its alt text.
 - **Lists deeper than the profile.** Items below the profile's list depth
   move up into its deepest level, in document order, after the item they
   stood in: `list-depth-reduced`, once per top-level list. `ul`, `ol` and
@@ -273,8 +278,12 @@ choice:
 - **Images.** An absolute source is treated as in md2lipupona: a link to
   it with the alt text, `image-not-local`. A `data:` source cannot be
   linked usefully: the alt text stays, and the report keeps the source.
-- **Links** without `href`, or with a `javascript:` one, are unwrapped:
-  `dropped-attribute`. An inline element that holds blocks (a link around a
+- **Links** without `href`, or with one the profile does not allow — a
+  scheme other than `http`, `https`, `mailto` and `tel`, such as
+  `javascript:` (2026-10-23) —, are unwrapped, their text kept:
+  `dropped-attribute` with the address. An image or an embedded object
+  whose source has such a scheme gives no link either: the alt text stays
+  of an image, an object is dropped (`dropped-element`). An inline element that holds blocks (a link around a
   card) is unwrapped around them: `dropped-element`.
 - **Forms**: `form`, `fieldset` and `label` are unwrapped; the controls
   (`input`, `button`, `select`, `textarea`, `option`) are dropped:

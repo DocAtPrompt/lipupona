@@ -15,6 +15,17 @@ pub fn has_scheme(v: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'-' | b'.'))
 }
 
+/// An `href` of the reference profile: relative, a fragment, or with one of
+/// the schemes `http`, `https`, `mailto` and `tel` in any case — never
+/// `javascript:` or `data:` (P5).
+pub fn is_allowed_href(v: &str) -> bool {
+    if !has_scheme(v) {
+        return true;
+    }
+    let scheme = v.split(':').next().unwrap_or("").to_ascii_lowercase();
+    matches!(scheme.as_str(), "http" | "https" | "mailto" | "tel")
+}
+
 /// Absolute in the sense of the reference profile's `src`: a scheme or a
 /// leading `/`.
 pub fn is_absolute(v: &str) -> bool {

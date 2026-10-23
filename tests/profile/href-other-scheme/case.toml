@@ -1,0 +1,3 @@
+kind = "passthrough"
+section = "A"
+note = "An href with a scheme other than http, https, mailto and tel is outside the profile."

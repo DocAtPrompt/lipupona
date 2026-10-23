@@ -1,0 +1,3 @@
+kind = "passthrough"
+section = "A"
+note = "An href that would run script, javascript:, vbscript: or data:, is outside the profile."

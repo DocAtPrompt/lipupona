@@ -79,7 +79,7 @@ with these restrictions:
 | `role` | only on `div`, only the value `note` (callouts of core weight) |
 | `open` | only on `details`, boolean, written `open=""` |
 | `start` | only on `ol`; omitted when 1 — canonicalisation removes `start="1"` |
-| `href` `src` | percent-encoded (C12); `src` never absolute: no scheme, no leading `/` |
+| `href` `src` | percent-encoded (C12); `href` relative, a fragment, or with the scheme `http`, `https`, `mailto` or `tel` in any ASCII case — never `javascript:`, `data:` or another scheme (P5); `src` never absolute: no scheme, no leading `/` |
 
 Never allowed in the body: the attribute `style`, event attributes (`on…`), `contenteditable`, `tabindex`.
 
