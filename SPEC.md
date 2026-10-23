@@ -1,6 +1,6 @@
 # lipupona — plain-text notation for profiled HTML
 
-**Version 0.4.0 — draft for public review — 2026-10-18**
+**Version 0.5.0 — draft for public review — 2026-10-23**
 
 *lipu* is a document, a page, a sheet; *pona* is good, simple — and repaired
 (toki pona). A lipupona document is an HTML document that is good to read for

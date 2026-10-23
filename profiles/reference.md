@@ -1,6 +1,6 @@
 # Reference profile
 
-**lipupona 0.4.0 — Appendix A**
+**lipupona 0.5.0 — Appendix A**
 
 The reference profile describes a *text document*: prose, lists, tables,
 figures, callouts, folding sections. It is not a website. It is the profile of
